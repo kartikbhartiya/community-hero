@@ -29,7 +29,14 @@ export async function POST(request: NextRequest) {
       Based on the visual evidence and text, please output a JSON object containing:
       1. 'isValidCivicIssue': A boolean. Return true if this is a genuine civic infrastructure or public safety issue. Return false if it is a selfie, a face, a meme, an abstract/unrelated photo, or general spam.
       2. 'invalidityReason': A string. If 'isValidCivicIssue' is false, explain why clearly and politely.
-      3. 'category': The best category from: Potholes, Water Supply, Waste Management, Electricity, Greenery, Public Health, Traffic, Other.
+      3. 'category': The most specific category from this list:
+         Potholes, Road Damage, Broken Streetlight, Water Leak, Sewage Overflow, Open Manhole,
+         Garbage Dumping, Overflowing Dustbin, Fallen Tree, Damaged Footpath, Illegal Encroachment,
+         Stray Animals, Waterlogging, Broken Traffic Signal, Missing Road Signs, Damaged Bus Stop,
+         Broken Bench, Vandalism, Noise Pollution, Air Pollution, Construction Debris,
+         Broken Railing, Damaged Playground, Electrical Hazard, Fire Hazard, Abandoned Vehicle,
+         Illegal Parking, Damaged Drain Cover, Public Toilet Issue, Mosquito Breeding, Other.
+         Choose the MOST SPECIFIC category that fits. Do not default to "Other" unless nothing else matches.
       4. 'severity': IMPORTANT - Assess this accurately based on impact:
          - 'High' = Active danger to life, limb, or property (open manholes, live wires, major road collapses, flooding blocking traffic, large fallen trees on roads). These MUST be marked High.
          - 'Medium' = Significant inconvenience or minor safety risk (moderate potholes, broken streetlights, garbage accumulation, water supply issues, minor road damage).

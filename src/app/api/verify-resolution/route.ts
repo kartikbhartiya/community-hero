@@ -62,13 +62,13 @@ export async function POST(request: NextRequest) {
       const cleanText = text.replace(/```json\n?|\n?```/g, '').trim();
       verification = JSON.parse(cleanText);
     } catch (apiError: any) {
-      console.warn('Gemini API call failed for resolution check. Falling back to default success:', apiError.message);
+      console.warn('Gemini API call failed for resolution check:', apiError.message);
       
-      // Heuristic fallback for demo
+      // Fallback must NOT auto-approve — return failure so authority must retry
       verification = {
-        isResolved: true,
-        quality: 'Satisfactory',
-        reasoning: 'Resolution confirmed. Verified repair matches category guidelines.'
+        isResolved: false,
+        quality: 'Invalid',
+        reasoning: 'AI verification service is temporarily unavailable. Please retry the comparison. Resolution cannot be approved without AI verification.'
       };
     }
 

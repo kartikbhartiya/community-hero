@@ -54,7 +54,7 @@ export default function AuthorityClient() {
   // Selected issue details
   const [selectedIssue, setSelectedIssue] = useState<any | null>(null);
   const [assignedOfficer, setAssignedOfficer] = useState('');
-  const [repairCost, setRepairCost] = useState<number | ''>('');
+  const [repairCost, setRepairCost] = useState<string>('');
   const [repairNotes, setRepairNotes] = useState('');
 
   // Resolution upload states
@@ -72,33 +72,60 @@ export default function AuthorityClient() {
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [confidenceFilter, setConfidenceFilter] = useState('all');
 
-  // Live Activity Log list
-  const [activityLogs, setActivityLogs] = useState<any[]>([
-    { id: 1, text: 'PWD Board accepted pothole report #4928.', type: 'info', time: '10s ago' },
-    { id: 2, text: 'Officer Sanjay Kumar assigned to MG Road water leak.', type: 'dispatch', time: '1m ago' },
-    { id: 3, text: 'Citizen verified garbage clearance at Ward 42.', type: 'success', time: '3m ago' },
-    { id: 4, text: 'AI auto-escalated critical streetlighting breach.', type: 'warning', time: '5m ago' }
-  ]);
+  // Live Activity Logs (real from DB)
+  const [activityLogs, setActivityLogs] = useState<any[]>([]);
 
-  // Feed updates simulation
-  useEffect(() => {
-    if (!isAuthenticated) return;
-    const interval = setInterval(() => {
-      const actions = [
-        'Water Supply Board dispatched engineering crew.',
-        'AI detected and merged duplicate report on Ward 10.',
-        'Citizen upvoted garbage clearance petition.',
-        'Solid Waste Management completed Work Order #928.',
-        'AI confidence score adjusted based on multi-source verification.'
-      ];
-      const randomAction = actions[Math.floor(Math.random() * actions.length)];
-      setActivityLogs(prev => [
-        { id: Date.now(), text: randomAction, type: 'info', time: 'Just now' },
-        ...prev.slice(0, 4)
-      ]);
-    }, 12000);
-    return () => clearInterval(interval);
-  }, [isAuthenticated]);
+  // Helper to safely parse cost strings like "₹5,000" or "7500" into numbers
+  const parseCost = (cost: any): number => {
+    if (cost === null || cost === undefined || cost === '') return 0;
+    if (typeof cost === 'number') return cost;
+    // Strip ₹ symbol, commas, spaces, and any non-numeric chars except dots
+    const cleaned = String(cost).replace(/[₹,\s]/g, '').replace(/[^0-9.]/g, '');
+    const parsed = parseFloat(cleaned);
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
+  // Full category list matching the Gemini prompt
+  const ALL_CATEGORIES = [
+    'Potholes', 'Road Damage', 'Broken Streetlight', 'Water Leak', 'Sewage Overflow', 'Open Manhole',
+    'Garbage Dumping', 'Overflowing Dustbin', 'Fallen Tree', 'Damaged Footpath', 'Illegal Encroachment',
+    'Stray Animals', 'Waterlogging', 'Broken Traffic Signal', 'Missing Road Signs', 'Damaged Bus Stop',
+    'Broken Bench', 'Vandalism', 'Noise Pollution', 'Air Pollution', 'Construction Debris',
+    'Broken Railing', 'Damaged Playground', 'Electrical Hazard', 'Fire Hazard', 'Abandoned Vehicle',
+    'Illegal Parking', 'Damaged Drain Cover', 'Public Toilet Issue', 'Mosquito Breeding', 'Other'
+  ];
+
+  // Fetch real activity logs from issue_events
+  const fetchActivityLogs = async () => {
+    try {
+      const { data } = await supabase
+        .from('issue_events')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(10);
+      if (data) {
+        setActivityLogs(data.map((ev: any) => {
+          const ago = getTimeAgo(ev.created_at);
+          return {
+            id: ev.id,
+            text: ev.message || `${ev.type} event on case #${ev.issue_id?.substring(0, 8)}`,
+            type: ev.type === 'escalated' ? 'warning' : ev.type === 'resolved' ? 'success' : 'info',
+            time: ago
+          };
+        }));
+      }
+    } catch (e) {
+      console.warn('Failed to fetch activity logs:', e);
+    }
+  };
+
+  const getTimeAgo = (dateStr: string) => {
+    const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
+    if (diff < 60) return `${diff}s ago`;
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    return `${Math.floor(diff / 86400)}d ago`;
+  };
 
   useEffect(() => {
     const token = sessionStorage.getItem('authority_session');
@@ -162,10 +189,12 @@ export default function AuthorityClient() {
         if (data.length > 0 && !selectedIssue) {
           setSelectedIssue(data[0]);
           setAssignedOfficer(data[0].assigned_officer || '');
-          setRepairCost(data[0].estimated_cost || '');
+          setRepairCost(data[0].estimated_cost ? String(parseCost(data[0].estimated_cost)) : '');
         }
         await runAutoEscalation(data);
       }
+      // Also fetch real activity logs
+      await fetchActivityLogs();
     } catch (e) {
       console.warn(e);
     } finally {
@@ -229,8 +258,8 @@ export default function AuthorityClient() {
 
     try {
       const updates: any = {};
-      updates.assigned_officer = assignedOfficer;
-      updates.estimated_cost = repairCost !== '' ? String(repairCost) : null;
+      if (assignedOfficer) updates.assigned_officer = assignedOfficer;
+      if (repairCost !== '') updates.estimated_cost = repairCost;
       if (repairNotes) updates.resolution_feedback = repairNotes;
 
       const { error } = await supabase
@@ -240,10 +269,18 @@ export default function AuthorityClient() {
 
       if (error) throw error;
 
+      // Log a dispatch event
+      await supabase.from('issue_events').insert([{
+        issue_id: selectedIssue.id,
+        type: 'dispatch',
+        message: `Work order dispatched${assignedOfficer ? ` to Officer ${assignedOfficer}` : ''}${repairCost ? ` with budget ₹${Number(repairCost).toLocaleString()}` : ''}.`
+      }]);
+
       alert('Work order generated successfully.');
       const updatedIssues = issues.map(i => i.id === selectedIssue.id ? { ...i, ...updates } : i);
       setIssues(updatedIssues);
       setSelectedIssue({ ...selectedIssue, ...updates });
+      await fetchActivityLogs();
     } catch (err: any) {
       alert(err.message || 'Error updating dispatch info.');
     }
@@ -253,12 +290,24 @@ export default function AuthorityClient() {
     const file = e.target.files?.[0];
     if (file) {
       setAfterImageFile(file);
+      setVerificationFeedback(null);
+      setVerificationError(null);
       const reader = new FileReader();
       reader.onloadend = () => {
         setAfterImagePreview(reader.result as string);
       };
       reader.readAsDataURL(file);
     }
+  };
+
+  const handleRemoveAfterImage = () => {
+    setAfterImageFile(null);
+    setAfterImagePreview(null);
+    setVerificationFeedback(null);
+    setVerificationError(null);
+    // Reset the file input
+    const input = document.getElementById('after-fix-upload') as HTMLInputElement;
+    if (input) input.value = '';
   };
 
   const uploadProofFile = async (file: File): Promise<string> => {
@@ -369,7 +418,7 @@ Priority Score: ${selectedIssue.priority_score}/100
 GPS Coordinates: ${selectedIssue.lat.toFixed(6)}, ${selectedIssue.lng.toFixed(6)}
 Routed Department: ${selectedIssue.department}
 Assigned Officer: ${selectedIssue.assigned_officer || 'Unassigned'}
-Estimated Repair Budget: $${selectedIssue.estimated_cost || '0'}
+Estimated Repair Budget: ₹${parseCost(selectedIssue.estimated_cost).toLocaleString()}
 SLA Hours: ${selectedIssue.sla_hours} hrs
 Created At: ${new Date(selectedIssue.created_at).toLocaleString()}
 Reporter: ${selectedIssue.reporter_name || 'Anonymous Citizen'}
@@ -432,7 +481,7 @@ ${selectedIssue.description}`;
   const resolvedCount = issues.filter(i => i.status === 'resolved').length;
   const escalatedCount = issues.filter(i => i.escalated).length;
   const activeDepts = new Set(issues.map(i => i.department).filter(Boolean)).size || 4;
-  const totalCost = issues.reduce((sum, i) => sum + Number(i.estimated_cost || 0), 0);
+  const totalCost = issues.reduce((sum, i) => sum + parseCost(i.estimated_cost), 0);
   const avgSlaHours = issues.length > 0 ? Math.round(issues.reduce((sum, i) => sum + (i.sla_hours || 72), 0) / issues.length) : 72;
   const avgConfidence = issues.length > 0 ? Math.round((issues.reduce((sum, i) => sum + (i.confidence || 0.85), 0) / issues.length) * 100) : 85;
 
@@ -646,7 +695,7 @@ ${selectedIssue.description}`;
             style={{ width: 'auto', fontSize: '0.76rem', padding: '0.4rem 1.5rem 0.4rem 0.75rem' }}
           >
             <option value="all">📁 All Categories</option>
-            {Array.from(new Set(issues.map(i => i.category))).map(cat => (
+            {ALL_CATEGORIES.map(cat => (
               <option key={cat} value={cat}>{cat}</option>
             ))}
           </select>
@@ -723,7 +772,7 @@ ${selectedIssue.description}`;
                   onClick={() => {
                     setSelectedIssue(issue);
                     setAssignedOfficer(issue.assigned_officer || '');
-                    setRepairCost(issue.estimated_cost || '');
+                    setRepairCost(issue.estimated_cost ? String(parseCost(issue.estimated_cost)) : '');
                     setRepairNotes(issue.resolution_feedback || '');
                     setAfterImagePreview(null);
                     setVerificationFeedback(null);
@@ -759,7 +808,7 @@ ${selectedIssue.description}`;
                   {issue.estimated_cost && (
                     <div style={{ marginTop: '0.35rem', fontSize: '0.65rem', color: '#737373', display: 'flex', justifyContent: 'space-between' }}>
                       <span>Est Budget:</span>
-                      <span style={{ fontWeight: 700, color: '#f4f4f5' }}>₹{Number(issue.estimated_cost).toLocaleString()}</span>
+                      <span style={{ fontWeight: 700, color: '#f4f4f5' }}>₹{parseCost(issue.estimated_cost).toLocaleString()}</span>
                     </div>
                   )}
                 </div>
@@ -817,7 +866,7 @@ ${selectedIssue.description}`;
                         onClick={() => {
                           setSelectedIssue(issue);
                           setAssignedOfficer(issue.assigned_officer || '');
-                          setRepairCost(issue.estimated_cost || '');
+                          setRepairCost(issue.estimated_cost ? String(parseCost(issue.estimated_cost)) : '');
                           setRepairNotes(issue.resolution_feedback || '');
                           setAfterImagePreview(null);
                           setVerificationFeedback(null);
@@ -838,7 +887,7 @@ ${selectedIssue.description}`;
                         </td>
                         <td style={{ padding: '0.75rem 1rem', color: 'hsl(var(--primary))' }}>{issue.department?.replace('Department', '').replace('Board', '') || 'General'}</td>
                         <td style={{ padding: '0.75rem 1rem', color: '#a3a3a3' }}>{issue.assigned_officer || 'Unassigned'}</td>
-                        <td style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>₹{issue.estimated_cost ? Number(issue.estimated_cost).toLocaleString() : '0'}</td>
+                        <td style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>₹{parseCost(issue.estimated_cost).toLocaleString()}</td>
                         <td style={{ padding: '0.75rem 1rem' }}>
                           <span className={`badge badge-${issue.status}`} style={{ fontSize: '0.62rem' }}>{issue.status}</span>
                         </td>
@@ -913,7 +962,33 @@ ${selectedIssue.description}`;
                   {selectedIssue.after_image_url ? (
                     <img src={selectedIssue.after_image_url} alt="After" style={{ width: '100%', height: '90px', objectFit: 'cover', borderRadius: '8px', border: '1px solid hsl(var(--accent))' }} />
                   ) : afterImagePreview ? (
-                    <img src={afterImagePreview} alt="After Preview" style={{ width: '100%', height: '90px', objectFit: 'cover', borderRadius: '8px' }} />
+                    <div style={{ position: 'relative' }}>
+                      <img src={afterImagePreview} alt="After Preview" style={{ width: '100%', height: '90px', objectFit: 'cover', borderRadius: '8px' }} />
+                      <button
+                        onClick={handleRemoveAfterImage}
+                        title="Remove this photo"
+                        style={{
+                          position: 'absolute',
+                          top: '4px',
+                          right: '4px',
+                          width: '20px',
+                          height: '20px',
+                          borderRadius: '50%',
+                          background: 'rgba(239, 68, 68, 0.9)',
+                          border: 'none',
+                          color: 'white',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          padding: 0,
+                          fontSize: '0.6rem',
+                          fontWeight: 800
+                        }}
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
                   ) : (
                     <div 
                       onClick={() => document.getElementById('after-fix-upload')?.click()}
@@ -1042,7 +1117,7 @@ ${selectedIssue.description}`;
                       className="input-field" 
                       placeholder="Cost"
                       value={repairCost}
-                      onChange={(e) => setRepairCost(e.target.value === '' ? '' : Number(e.target.value))}
+                      onChange={(e) => setRepairCost(e.target.value)}
                       style={{ fontSize: '0.7rem', padding: '0.35rem' }}
                     />
                   </div>
@@ -1076,16 +1151,37 @@ ${selectedIssue.description}`;
                   onClick={() => handleStatusChange(selectedIssue.id, 'in_progress')}
                   className="btn btn-secondary"
                   style={{ flex: 1, padding: '0.45rem', fontSize: '0.72rem' }}
+                  disabled={selectedIssue.status === 'resolved'}
                 >
                   In Progress
                 </button>
-                <button 
-                  onClick={() => handleStatusChange(selectedIssue.id, 'resolved')}
-                  className="btn btn-primary"
-                  style={{ flex: 1, padding: '0.45rem', fontSize: '0.72rem' }}
-                >
-                  Resolve
-                </button>
+                {selectedIssue.resolution_verified ? (
+                  <button 
+                    className="btn btn-primary"
+                    style={{ flex: 1, padding: '0.45rem', fontSize: '0.72rem', opacity: 1 }}
+                    disabled
+                  >
+                    ✓ Verified & Resolved
+                  </button>
+                ) : (
+                  <button 
+                    onClick={() => {
+                      if (!selectedIssue.after_image_url && !afterImagePreview) {
+                        alert('You must upload an after-fix photo and pass AI verification before resolving.');
+                        return;
+                      }
+                      if (!selectedIssue.resolution_verified && !verificationFeedback) {
+                        alert('AI verification is mandatory. Click "Compare proof with AI" first.');
+                        return;
+                      }
+                      handleStatusChange(selectedIssue.id, 'resolved');
+                    }}
+                    className="btn btn-primary"
+                    style={{ flex: 1, padding: '0.45rem', fontSize: '0.72rem' }}
+                  >
+                    Resolve
+                  </button>
+                )}
                 <button 
                   onClick={handleDownloadReport}
                   className="btn btn-secondary"
@@ -1095,6 +1191,11 @@ ${selectedIssue.description}`;
                   <FileText size={14} />
                 </button>
               </div>
+              {!selectedIssue.resolution_verified && selectedIssue.status !== 'resolved' && (
+                <div style={{ fontSize: '0.62rem', color: '#eab308', background: 'rgba(234, 179, 8, 0.06)', border: '1px solid rgba(234, 179, 8, 0.1)', padding: '0.4rem 0.6rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                  <AlertTriangle size={11} /> Resolution requires uploading an after-fix photo and passing AI verification.
+                </div>
+              )}
             </>
           ) : (
             <div style={{ textAlign: 'center', color: '#737373', fontSize: '0.78rem', marginTop: '4rem' }}>

@@ -1,5 +1,8 @@
--- Fresh Reset SQL Schema for Supabase
--- Execute this in the Supabase SQL Editor to wipe existing data and recreate the clean schema.
+-- ===================================================================
+-- Community Hero — Full Schema (v2)
+-- Execute this in the Supabase SQL Editor.
+-- ⚠️  WARNING: This drops existing tables and recreates them clean.
+-- ===================================================================
 
 -- 1. Drop existing objects in reverse order of dependency
 DROP TABLE IF EXISTS public.comments CASCADE;
@@ -26,7 +29,7 @@ CREATE TABLE public.issues (
   lat DOUBLE PRECISION NOT NULL,
   lng DOUBLE PRECISION NOT NULL,
   image_url TEXT,
-  status TEXT DEFAULT 'pending', -- pending, resolved
+  status TEXT DEFAULT 'pending', -- pending, in_progress, resolved
   upvotes INTEGER DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   
@@ -56,6 +59,7 @@ CREATE TABLE public.issues (
   -- SLA Routing & Departments
   department TEXT,
   department_id TEXT,
+  assigned_officer TEXT,         -- ← NEW: name of officer assigned
   priority_score INTEGER DEFAULT 0,
   sla_hours INTEGER DEFAULT 72,
   sla_due_at TIMESTAMP WITH TIME ZONE,
@@ -74,7 +78,7 @@ CREATE TABLE public.issues (
 CREATE TABLE public.issue_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   issue_id UUID NOT NULL REFERENCES public.issues(id) ON DELETE CASCADE,
-  type TEXT NOT NULL, -- created, acknowledged, resolved, escalated, duplicate_linked
+  type TEXT NOT NULL, -- created, acknowledged, resolved, escalated, duplicate_linked, status_change, dispatch, verification
   message TEXT,
   meta JSONB,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -96,7 +100,7 @@ ALTER TABLE public.issues ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.issue_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.comments ENABLE ROW LEVEL SECURITY;
 
--- 7. Create highly permissive policies to ensure all actions work for local development and hackathons
+-- 7. Create highly permissive policies for local dev / hackathons
 CREATE POLICY "Allow all on users" ON public.users FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on issues" ON public.issues FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow all on issue_events" ON public.issue_events FOR ALL USING (true) WITH CHECK (true);
@@ -108,12 +112,12 @@ CREATE INDEX IF NOT EXISTS issues_created_at_idx      ON public.issues (created_
 CREATE INDEX IF NOT EXISTS issues_geo_idx             ON public.issues (lat, lng);
 CREATE INDEX IF NOT EXISTS issues_priority_idx        ON public.issues (priority_score DESC);
 CREATE INDEX IF NOT EXISTS issue_events_issue_idx     ON public.issue_events (issue_id, created_at DESC);
-CREATE INDEX IF NOT EXISTS comments_issue_idx        ON public.comments (issue_id, created_at);
+CREATE INDEX IF NOT EXISTS comments_issue_idx         ON public.comments (issue_id, created_at);
 
 -- 9. Create Storage bucket for issue images (skipped if already exists)
-insert into storage.buckets (id, name, public)
-values ('issue-images', 'issue-images', true)
-on conflict (id) do nothing;
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('issue-images', 'issue-images', true)
+ON CONFLICT (id) DO NOTHING;
 
 -- 10. Re-create storage policies for bucket (permissive)
 DROP POLICY IF EXISTS "Public Access" ON storage.objects;
@@ -127,3 +131,12 @@ CREATE POLICY "Allow Updates" ON storage.objects FOR UPDATE USING ( bucket_id = 
 
 DROP POLICY IF EXISTS "Allow Deletes" ON storage.objects;
 CREATE POLICY "Allow Deletes" ON storage.objects FOR DELETE USING ( bucket_id = 'issue-images' );
+
+-- ===================================================================
+-- MIGRATION ONLY (if you already have data and DON'T want to drop):
+-- Run this instead of the DROP + CREATE above:
+--
+--   ALTER TABLE public.issues
+--     ADD COLUMN IF NOT EXISTS assigned_officer TEXT;
+--
+-- ===================================================================
