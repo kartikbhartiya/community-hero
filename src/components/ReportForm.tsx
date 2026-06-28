@@ -402,7 +402,7 @@ export default function ReportForm() {
         .from('issues')
         .insert([{
           title,
-          description,
+          description: description + (aiData?.location_landmark ? `\n\n📍 Landmark/Area Context: ${aiData.location_landmark}` : ''),
           lat: location.lat,
           lng: location.lng,
           image_url: imageUrl,

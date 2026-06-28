@@ -146,7 +146,7 @@ The Public Information Officer (PIO)
 Office of the Municipal Commissioner,
 ${issue.department || 'General Administration Cell'}
 
-1. Full Name of the Applicant: ${issue.reporter_name || 'Community Member'}
+1. Full Name of the Applicant: ${issue.reporter_name || 'Anonymous Citizen'}
 2. Address: Community Hero Citizen Network (Digital Grievance Cell)
 3. Particulars of Information required under Section 6(1):
    a. Subject matter of information: Action taken on reported civic issue ID ${issue.id}.
@@ -184,7 +184,7 @@ _____________________________
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      let authorName = 'Community Member';
+      let authorName = 'Anonymous Citizen';
       const authorEmail = user?.email || null;
 
       if (user?.email) {
@@ -196,7 +196,7 @@ _____________________________
         if (profile?.name) {
           authorName = profile.name;
         } else {
-          authorName = user.user_metadata?.name || 'Anonymous Hero';
+          authorName = user.user_metadata?.name || user.email.split('@')[0] || 'Anonymous Citizen';
         }
       }
 
@@ -492,7 +492,7 @@ _____________________________
             The Public Information Officer (PIO)<br />
             Office of the Municipal Commissioner,<br />
             {issue.department || 'General Administration Cell'}<br /><br />
-            1. Full Name of the Applicant: {issue.reporter_name || 'Community Member'}<br />
+            1. Full Name of the Applicant: {issue.reporter_name || 'Anonymous Citizen'}<br />
             2. Address: Community Hero Citizen Network (Digital Grievance Cell)<br />
             3. Particulars of Information required:<br />
             &nbsp;&nbsp;&nbsp;a. Subject: Action taken on reported civic issue ID {issue.id}.<br />
@@ -547,7 +547,9 @@ _____________________________
                   <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.35rem', borderRadius: '50%', border: '1px solid rgba(255,255,255,0.05)' }}>
                     <User size={14} color="#9ca3af" />
                   </div>
-                  <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>{comment.author_name}</span>
+                  <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>
+                    {(!comment.author_name || comment.author_name === 'Community Member' || comment.author_name === 'Community member') ? 'Anonymous Citizen' : comment.author_name}
+                  </span>
                   <span style={{ color: '#6b7280', fontSize: '0.75rem', marginLeft: 'auto' }}>{new Date(comment.created_at).toLocaleDateString()}</span>
                 </div>
                 <p style={{ fontSize: '0.9rem', color: '#d1d5db', lineHeight: 1.5 }}>{comment.body}</p>

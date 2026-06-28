@@ -33,7 +33,8 @@ export async function POST(request: NextRequest) {
       4. 'severity': 'Low', 'Medium', or 'High'.
       5. 'safety_risk': 'none', 'low', 'medium', or 'high'.
       6. 'official_summary': A professional, objective 1-2 sentence summary of the issue.
-      7. 'department': The specific Indian Municipal Department responsible. Choose strictly from:
+      7. 'location_landmark': A string detailing the estimated nearby landmark, area name, or context (e.g., 'Near Brigade Road Metro, Bangalore') based on description or visual clues in the image.
+      8. 'department': The specific Indian Municipal Department responsible. Choose strictly from:
          - 'Public Works Department (PWD)' (for potholes, road damage, pavement repairs)
          - 'Municipal Solid Waste Management (SWM) & Sanitation' (for garbage dump, street cleaning, litter)
          - 'Water Supply & Sewerage Board (WSSB)' (for water leaks, sewage blockages, open manholes)
@@ -41,9 +42,9 @@ export async function POST(request: NextRequest) {
          - 'Horticulture / Parks & Gardens Department' (for fallen trees, park maintenance)
          - 'Public Health & Sanitation Department' (for stray animal hazard, stagnant breeding water)
          - 'Traffic Police & Road Safety Cell' (for encroachments, non-working traffic lights, illegal parking)
-      8. 'estimated_cost': A rough text estimate of repair cost in Indian Rupees (INR) or resources required (e.g. '₹5,000', 'Low cost utility fix').
-      9. 'confidence': A float between 0.0 and 1.0 representing your confidence in this routing.
-      10. 'complaint_draft': A formal complaint draft written in Indian administrative memo style. 
+      9. 'estimated_cost': A rough text estimate of repair cost in Indian Rupees (INR) or resources required (e.g. '₹5,000', 'Low cost utility fix').
+      10. 'confidence': A float between 0.0 and 1.0 representing your confidence in this routing.
+      11. 'complaint_draft': A formal complaint draft written in Indian administrative memo style. 
           - Address it to: 'The Ward Officer / Executive Engineer, Municipal Corporation'
           - Include a formal Subject ('Sub: Urgent rectification of [Issue Type] at Ward level...')
           - Write a polite, demanding letter citing public safety, referencing citizen reports, and demanding action under SLA time limits.
@@ -86,6 +87,7 @@ export async function POST(request: NextRequest) {
         estimated_cost: '₹7,500',
         confidence: 0.85,
         ai_verified: false,
+        location_landmark: 'Near Municipal Center, Bangalore',
         complaint_draft: `To,\nThe Ward Officer / Executive Engineer,\nMunicipal Corporation\n\nSubject: Request for inspection of reported issue.\n\nDear Sir/Madam,\nThis is to report a neighborhood issue: "${description}". Kindly initiate inspection.\n\nYours faithfully,\nCommunity Hero Citizen`
       };
     }
