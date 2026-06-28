@@ -1,0 +1,114 @@
+.formContainer {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  padding: 2rem;
+  max-width: 600px;
+  margin: 2rem auto;
+  box-shadow: 0 4px 20px -2px rgb(0 0 0 / 0.1);
+}
+
+.title {
+  font-size: 1.5rem;
+  margin-bottom: 1.5rem;
+  color: hsl(var(--foreground));
+}
+
+.formGroup {
+  margin-bottom: 1.5rem;
+}
+
+.label {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+  color: hsl(var(--foreground));
+}
+
+.fileInput {
+  display: none;
+}
+
+.fileUploadArea {
+  border: 2px dashed hsl(var(--border));
+  border-radius: var(--radius);
+  padding: 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: hsla(var(--background), 0.5);
+}
+
+.fileUploadArea:hover {
+  border-color: hsl(var(--primary));
+  background: hsla(var(--primary), 0.05);
+}
+
+.fileUploadIcon {
+  color: hsl(var(--primary));
+  margin-bottom: 0.5rem;
+}
+
+.imagePreview {
+  width: 100%;
+  max-height: 300px;
+  object-fit: contain;
+  border-radius: var(--radius);
+  margin-top: 1rem;
+}
+
+.textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+.submitBtn {
+  width: 100%;
+  font-size: 1.05rem;
+  padding: 0.75rem;
+}
+
+.error {
+  color: hsl(var(--destructive));
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+}
+
+.successMessage {
+  text-align: center;
+  padding: 2rem;
+}
+
+.successIcon {
+  color: hsl(var(--accent));
+  margin-bottom: 1rem;
+}
+
+.locationBtn {
+  width: 100%;
+  margin-top: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  font-size: 0.9rem;
+  border-radius: var(--radius);
+  background: hsla(var(--foreground), 0.05);
+  border: 1px solid hsl(var(--border));
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: hsl(var(--foreground));
+}
+
+.locationBtn:hover {
+  background: hsla(var(--foreground), 0.1);
+}
+
+.locationText {
+  font-size: 0.85rem;
+  color: hsl(var(--primary));
+  margin-top: 0.5rem;
+  text-align: center;
+}
