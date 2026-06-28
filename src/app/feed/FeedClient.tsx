@@ -26,12 +26,20 @@ export default function FeedClient() {
   };
 
   const handleUpvote = async (id: string, currentUpvotes: number) => {
+    const upvotedIssues = JSON.parse(localStorage.getItem('community_hero_upvotes') || '[]');
+    if (upvotedIssues.includes(id)) {
+      alert("You have already validated/upvoted this issue.");
+      return;
+    }
+
     const { error } = await supabase
       .from('issues')
       .update({ upvotes: currentUpvotes + 1 })
       .eq('id', id);
       
     if (!error) {
+      upvotedIssues.push(id);
+      localStorage.setItem('community_hero_upvotes', JSON.stringify(upvotedIssues));
       setIssues(issues.map(issue => 
         issue.id === id ? { ...issue, upvotes: currentUpvotes + 1 } : issue
       ));

@@ -1,0 +1,17 @@
+{
+  "name": "Community Hero",
+  "short_name": "Community Hero",
+  "description": "Hyperlocal Civic Infrastructure Validation and Escalation Platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070707",
+  "theme_color": "#070707",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon"
+    }
+  ]
+}

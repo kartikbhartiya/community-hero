@@ -22,14 +22,9 @@ function LoginFormContent() {
           display: 'inline-flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: 'hsla(var(--primary), 0.1)',
-          color: 'hsl(var(--primary))',
-          width: '60px',
-          height: '60px',
-          borderRadius: '50%',
           marginBottom: '1rem'
         }}>
-          <ShieldAlert size={32} />
+          <img src="/logo.png" alt="Logo" style={{ width: '64px', height: '64px', objectFit: 'contain', borderRadius: '8px' }} />
         </div>
         <h2 style={{ fontSize: '1.8rem', fontWeight: 700 }}>Welcome Back</h2>
         <p style={{ color: '#737373', fontSize: '0.95rem', marginTop: '0.5rem' }}>
