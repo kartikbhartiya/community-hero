@@ -30,6 +30,7 @@ export default function ReportForm() {
 
   // Validation Warning Modal state
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [isDuplicateLinked, setIsDuplicateLinked] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -373,7 +374,7 @@ export default function ReportForm() {
 
       const { data: { user } } = await supabase.auth.getUser();
 
-      // SLA and Priority scoring
+      // SLA and Priority scoring — now uses AI-generated priority_score
       const severity = aiData?.severity || 'Medium';
       const safetyRisk = aiData?.safety_risk || 'medium';
       const confidence = aiData?.confidence || 0.75;
@@ -385,17 +386,60 @@ export default function ReportForm() {
       const createdDate = new Date();
       const slaDueDate = new Date(createdDate.getTime() + slaHours * 60 * 60 * 1000);
 
-      let severityPoints = 25;
-      if (severity.toLowerCase() === 'high') severityPoints = 50;
-      else if (severity.toLowerCase() === 'low') severityPoints = 10;
+      // Use AI-generated priority_score if available, otherwise fall back to formula
+      let initialPriorityScore = aiData?.priority_score;
+      if (typeof initialPriorityScore !== 'number' || initialPriorityScore < 0 || initialPriorityScore > 100) {
+        let severityPoints = 25;
+        if (severity.toLowerCase() === 'high') severityPoints = 50;
+        else if (severity.toLowerCase() === 'low') severityPoints = 10;
 
-      let riskPoints = 15;
-      if (safetyRisk.toLowerCase() === 'high') riskPoints = 30;
-      else if (safetyRisk.toLowerCase() === 'low') riskPoints = 5;
-      else if (safetyRisk.toLowerCase() === 'none') riskPoints = 0;
+        let riskPoints = 15;
+        if (safetyRisk.toLowerCase() === 'high') riskPoints = 30;
+        else if (safetyRisk.toLowerCase() === 'low') riskPoints = 5;
+        else if (safetyRisk.toLowerCase() === 'none') riskPoints = 0;
 
-      const confidencePoints = Math.round(confidence * 10);
-      const initialPriorityScore = Math.min(100, severityPoints + riskPoints + confidencePoints);
+        const confidencePoints = Math.round(confidence * 10);
+        initialPriorityScore = Math.min(100, severityPoints + riskPoints + confidencePoints);
+      }
+
+      // Use AI numeric cost or parse the text cost
+      const numericCost = aiData?.estimated_cost_numeric || null;
+
+      // Check if duplicate detected
+      if (aiData?.duplicate_of) {
+        // Fetch current original issue details
+        const { data: original } = await supabase
+          .from('issues')
+          .select('duplicate_count, upvotes, priority_score')
+          .eq('id', aiData.duplicate_of)
+          .single();
+
+        const newDupCount = (original?.duplicate_count || 0) + 1;
+        const newUpvotes = (original?.upvotes || 0) + 1;
+        const newPriorityScore = Math.min(100, (original?.priority_score || 0) + 8);
+
+        // Update the original issue
+        await supabase
+          .from('issues')
+          .update({ 
+            duplicate_count: newDupCount,
+            upvotes: newUpvotes,
+            priority_score: newPriorityScore
+          })
+          .eq('id', aiData.duplicate_of);
+
+        // Log duplicate event on the original issue
+        await supabase.from('issue_events').insert([{
+          issue_id: aiData.duplicate_of,
+          type: 'duplicate_linked',
+          message: `Duplicate report linked. Total merged counts: ${newDupCount}. Priority level elevated to ${newPriorityScore}/100.`
+        }]);
+
+        setIsDuplicateLinked(true);
+        setIsSuccess(true);
+        setIsLoading(false);
+        return;
+      }
 
       // Insert issue
       const { data, error: dbError } = await supabase
@@ -415,13 +459,12 @@ export default function ReportForm() {
           confidence: confidence,
           safety_risk: safetyRisk,
           department: aiData?.department || 'General Administration',
-          estimated_cost: aiData?.estimated_cost || null,
+          estimated_cost: numericCost ? String(numericCost) : (aiData?.estimated_cost || null),
           reporter_name: user?.user_metadata?.name || 'Anonymous Citizen',
           reporter_email: user?.email || null,
           sla_hours: slaHours,
           sla_due_at: slaDueDate.toISOString(),
           priority_score: initialPriorityScore,
-          duplicate_of: aiData?.duplicate_of || null,
           language: selectedLanguage
         }])
         .select()
@@ -429,34 +472,12 @@ export default function ReportForm() {
 
       if (dbError) throw dbError;
 
-      // Handle duplicate linkage
-      if (aiData?.duplicate_of && data) {
-        const { data: original } = await supabase
-          .from('issues')
-          .select('duplicate_count')
-          .eq('id', aiData.duplicate_of)
-          .single();
-        const count = (original?.duplicate_count || 0) + 1;
-        await supabase
-          .from('issues')
-          .update({ duplicate_count: count })
-          .eq('id', aiData.duplicate_of);
-          
-        await supabase.from('issue_events').insert([{
-          issue_id: aiData.duplicate_of,
-          type: 'duplicate_linked',
-          message: `A duplicate report has been linked to this issue. Total duplicates: ${count}.`
-        }]);
-      }
-
       // Log event
       if (data) {
         await supabase.from('issue_events').insert([{
           issue_id: data.id,
           type: 'created',
-          message: aiData?.duplicate_of 
-            ? 'Issue reported and linked as duplicate of an existing active complaint.' 
-            : 'Issue reported and validated by AI routing agent.'
+          message: 'Issue reported and validated by AI routing agent.'
         }]);
       }
 
@@ -473,14 +494,16 @@ export default function ReportForm() {
     return (
       <div className={styles.formContainer}>
         <div className={styles.successMessage}>
-          <CheckCircle className={styles.successIcon} size={64} />
+          <CheckCircle className={styles.successIcon} size={64} style={{ color: isDuplicateLinked ? 'hsl(var(--primary))' : 'hsl(var(--accent))' }} />
           <h2 style={{ fontFamily: 'Outfit', fontWeight: 700 }}>
-            {isOfflineQueued ? 'Report Queued Offline' : 'Report Logged Successfully'}
+            {isDuplicateLinked ? 'Duplicate Report Merged' : isOfflineQueued ? 'Report Queued Offline' : 'Report Logged Successfully'}
           </h2>
           <p style={{ marginTop: '1rem', color: 'hsl(var(--foreground))', opacity: 0.8, lineHeight: 1.6 }}>
-            {isOfflineQueued 
-              ? 'Connectivity is offline. Your report has been saved to your local device cache and will automatically submit the moment connection is restored.'
-              : 'Thank you for being a Community Hero. Your issue has been logged, routed to the responsible SLA department, and is now live on the city map.'}
+            {isDuplicateLinked
+              ? 'Our AI duplicate detection system identified a matching active complaint already registered in your vicinity. To avoid duplicates and boost ticket priority, we have upvoted and merged your report into the existing case!'
+              : isOfflineQueued 
+                ? 'Connectivity is offline. Your report has been saved to your local device cache and will automatically submit the moment connection is restored.'
+                : 'Thank you for being a Community Hero. Your issue has been logged, routed to the responsible SLA department, and is now live on the city map.'}
           </p>
           <button 
             className="btn btn-primary" 
