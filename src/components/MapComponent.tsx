@@ -29,11 +29,42 @@ export default function MapComponent() {
   const [issues, setIssues] = useState<any[]>([]);
   const [selectedIssue, setSelectedIssue] = useState<any | null>(null);
   const [map, setMap] = useState<google.maps.Map | null>(null);
-  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [showHeatmap, setShowHeatmap] = useState(true);
 
   useEffect(() => {
     fetchIssues();
   }, []);
+
+  useEffect(() => {
+    if (!map) return;
+    const handleScroll = () => {
+      // Calculate scroll progress percentage
+      const totalScroll = document.documentElement.scrollHeight - window.innerHeight;
+      if (totalScroll <= 0) return;
+      const scrollPercent = window.scrollY / totalScroll;
+      
+      // Zoom in from 13 to 15.5 as user scrolls
+      const newZoom = 13 + scrollPercent * 2.5;
+      map.setZoom(Math.min(16, Math.max(12, newZoom)));
+      
+      // Pan toward the first issue location if available
+      if (issues.length > 0) {
+        const targetIssue = issues[0];
+        const startLat = defaultCenter.lat;
+        const startLng = defaultCenter.lng;
+        const targetLat = targetIssue.lat;
+        const targetLng = targetIssue.lng;
+        
+        map.setCenter({
+          lat: startLat + (targetLat - startLat) * Math.min(1, scrollPercent * 1.5),
+          lng: startLng + (targetLng - startLng) * Math.min(1, scrollPercent * 1.5)
+        });
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, [map, issues]);
 
   const fetchIssues = async () => {
     const { data, error } = await supabase
@@ -63,7 +94,7 @@ export default function MapComponent() {
   }, []);
 
   const getMarkerIcon = (status: string, category: string) => {
-    const color = status === 'resolved' ? '#10b981' : (status === 'validated' ? '#3b82f6' : '#f59e0b');
+    const color = status === 'resolved' ? '#10b981' : (status === 'validated' ? '#ea580c' : '#f59e0b');
     return {
       path: 'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z',
       fillColor: color,
@@ -155,7 +186,7 @@ export default function MapComponent() {
             <span className={styles.legendDot} style={{ background: '#f59e0b' }}></span> Pending
           </div>
           <div className={styles.legendItem}>
-            <span className={styles.legendDot} style={{ background: '#3b82f6' }}></span> Validated
+            <span className={styles.legendDot} style={{ background: '#ea580c' }}></span> Validated
           </div>
           <div className={styles.legendItem}>
             <span className={styles.legendDot} style={{ background: '#10b981' }}></span> Resolved

@@ -2,28 +2,35 @@
   background: hsl(var(--card));
   border: 1px solid hsl(var(--border));
   border-radius: var(--radius);
-  padding: 2rem;
+  padding: 2.5rem;
   max-width: 600px;
-  margin: 2rem auto;
-  box-shadow: 0 4px 20px -2px rgb(0 0 0 / 0.1);
+  margin: 3rem auto;
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+  position: relative;
+  overflow: hidden;
 }
 
 .title {
-  font-size: 1.5rem;
-  margin-bottom: 1.5rem;
+  font-size: 1.8rem;
+  margin-bottom: 2rem;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
   color: hsl(var(--foreground));
+  text-align: center;
 }
 
 .formGroup {
-  margin-bottom: 1.5rem;
+  margin-bottom: 1.75rem;
 }
 
 .label {
   display: block;
-  font-size: 0.95rem;
-  font-weight: 500;
+  font-size: 0.85rem;
+  font-weight: 600;
   margin-bottom: 0.5rem;
-  color: hsl(var(--foreground));
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #737373;
 }
 
 .fileInput {
@@ -31,71 +38,117 @@
 }
 
 .fileUploadArea {
-  border: 2px dashed hsl(var(--border));
+  border: 1px dashed hsl(var(--border));
   border-radius: var(--radius);
-  padding: 2rem;
+  padding: 3rem 2rem;
   text-align: center;
   cursor: pointer;
-  transition: all 0.2s ease;
-  background: hsla(var(--background), 0.5);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  background: hsla(var(--foreground), 0.02);
 }
 
 .fileUploadArea:hover {
   border-color: hsl(var(--primary));
-  background: hsla(var(--primary), 0.05);
+  background: hsla(var(--primary), 0.04);
 }
 
 .fileUploadIcon {
   color: hsl(var(--primary));
-  margin-bottom: 0.5rem;
+  margin-bottom: 1rem;
+  transition: transform 0.3s ease;
+}
+
+.fileUploadArea:hover .fileUploadIcon {
+  transform: translateY(-4px);
+}
+
+.previewContainer {
+  position: relative;
+  width: 100%;
+  max-height: 350px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid hsl(var(--border));
+  margin-top: 1rem;
 }
 
 .imagePreview {
   width: 100%;
-  max-height: 300px;
-  object-fit: contain;
-  border-radius: var(--radius);
-  margin-top: 1rem;
+  max-height: 350px;
+  object-fit: cover;
+}
+
+/* AI Laser Scanning Animation */
+.scanContainer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+.scanLine {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 4px;
+  background: hsl(var(--primary));
+  box-shadow: 0 0 15px 4px hsl(var(--primary));
+  animation: laserScan 2.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes laserScan {
+  0% { top: 0%; }
+  50% { top: 100%; }
+  100% { top: 0%; }
 }
 
 .textarea {
   resize: vertical;
-  min-height: 100px;
+  min-height: 120px;
 }
 
 .submitBtn {
   width: 100%;
-  font-size: 1.05rem;
-  padding: 0.75rem;
+  font-size: 1rem;
+  padding: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  margin-top: 1.5rem;
 }
 
 .error {
   color: hsl(var(--destructive));
   font-size: 0.9rem;
   margin-top: 0.5rem;
+  font-weight: 500;
 }
 
 .successMessage {
   text-align: center;
-  padding: 2rem;
+  padding: 3rem 1.5rem;
 }
 
 .successIcon {
   color: hsl(var(--accent));
-  margin-bottom: 1rem;
+  margin-bottom: 1.5rem;
 }
 
 .locationBtn {
   width: 100%;
   margin-top: 0.5rem;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  padding: 0.5rem;
+  padding: 0.75rem;
   font-size: 0.9rem;
+  font-weight: 600;
   border-radius: var(--radius);
-  background: hsla(var(--foreground), 0.05);
+  background: hsla(var(--foreground), 0.03);
   border: 1px solid hsl(var(--border));
   cursor: pointer;
   transition: all 0.2s ease;
@@ -103,12 +156,65 @@
 }
 
 .locationBtn:hover {
-  background: hsla(var(--foreground), 0.1);
+  background: hsla(var(--foreground), 0.08);
+  border-color: hsla(var(--foreground), 0.2);
 }
 
 .locationText {
-  font-size: 0.85rem;
+  font-size: 0.9rem;
   color: hsl(var(--primary));
   margin-top: 0.5rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+}
+
+/* Premium Invalidation Modal overlay & box */
+.modalOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeInModal 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.modalContent {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  padding: 2.5rem;
+  max-width: 500px;
+  width: 90%;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
   text-align: center;
+}
+
+@keyframes fadeInModal {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Upload progress bar style */
+.progressBarContainer {
+  width: 100%;
+  height: 6px;
+  background: hsla(var(--foreground), 0.05);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 0.75rem;
+}
+
+.progressBar {
+  height: 100%;
+  background: hsl(var(--primary));
+  transition: width 0.3s ease;
 }
