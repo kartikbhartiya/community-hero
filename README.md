@@ -213,7 +213,7 @@ npm run dev   # http://localhost:3000
 ```
 
 > **Authority console:** `/login → Authority` tab → enter `AUTHORITY_PORTAL_PASSWORD`.
-> **Demo account:** one‑time create `demo@communityhero.app` / `demohero123`, confirm the
+> **Demo account:** credentials are :- `kartikbhartiya613@gmail.com` / `123456`, confirm the
 > email, then the **"Try the Demo Account"** button signs judges in instantly.
 
 ---
