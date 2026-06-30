@@ -59,6 +59,7 @@ export default function MapComponent({
   // Directions routing state
   const [directionsResponse, setDirectionsResponse] = useState<google.maps.DirectionsResult | null>(null);
   const [routeHazards, setRouteHazards] = useState<any[]>([]);
+  const [safestRouteIndex, setSafestRouteIndex] = useState(0);
 
   // If external issues are provided, use them; otherwise fetch from DB
   const issues = useMemo(() => {
@@ -103,11 +104,27 @@ export default function MapComponent({
         origin: startAddress,
         destination: endAddress,
         travelMode: window.google.maps.TravelMode.DRIVING,
+        provideRouteAlternatives: true, // we want options to pick the SAFEST from
       },
       (result, status) => {
         if (status === window.google.maps.DirectionsStatus.OK && result) {
+          // Score every alternative by how many reported hazards lie along it,
+          // then highlight the route with the fewest obstructions (the safest).
+          let bestIdx = 0;
+          let bestHazards: any[] = [];
+          let bestCount = Infinity;
+          result.routes.forEach((route, idx) => {
+            const detected = hazardsAlongPath(route.overview_path);
+            if (detected.length < bestCount) {
+              bestCount = detected.length;
+              bestIdx = idx;
+              bestHazards = detected;
+            }
+          });
+          setSafestRouteIndex(bestIdx);
           setDirectionsResponse(result);
-          calculateRouteHazards(result);
+          setRouteHazards(bestHazards);
+          if (onHazardsDetected) onHazardsDetected(bestHazards);
         } else {
           console.error(`Directions request failed: ${status}`);
         }
@@ -140,26 +157,24 @@ export default function MapComponent({
     return R * c; // in meters
   };
 
-  // Check if any issues are along the route path (within 150m buffer)
-  const calculateRouteHazards = (result: google.maps.DirectionsResult) => {
-    const routePath = result.routes[0]?.overview_path;
-    if (!routePath || issues.length === 0) return;
-
+  // Reported issues lying within a 150m buffer of a given route path.
+  const hazardsAlongPath = (routePath?: google.maps.LatLng[]) => {
+    if (!routePath || issues.length === 0) return [] as any[];
     const detected: any[] = [];
     issues.forEach(issue => {
       let minDistance = Infinity;
       routePath.forEach(point => {
         const dist = getDistanceInMeters(issue.lat, issue.lng, point.lat(), point.lng());
-        if (dist < minDistance) {
-          minDistance = dist;
-        }
+        if (dist < minDistance) minDistance = dist;
       });
-
-      if (minDistance <= 150) {
-        detected.push(issue);
-      }
+      if (minDistance <= 150) detected.push(issue);
     });
+    return detected;
+  };
 
+  // (kept for compatibility)
+  const calculateRouteHazards = (result: google.maps.DirectionsResult) => {
+    const detected = hazardsAlongPath(result.routes[0]?.overview_path);
     setRouteHazards(detected);
     if (onHazardsDetected) {
       onHazardsDetected(detected);
@@ -262,7 +277,7 @@ export default function MapComponent({
         gap: '0.5rem',
         boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
       }}>
-        <Layers size={14} color="hsl(var(--primary))" />
+        <Layers size={14} color="var(--primary)" />
         <span>Operations Mode: {showHeatmap ? 'Heatmap Density' : 'Tactical Pinpoints'}</span>
       </div>
 
@@ -340,9 +355,11 @@ export default function MapComponent({
 
         {/* Draw routing path renderer */}
         {directionsResponse && (
-          <DirectionsRenderer 
-            directions={directionsResponse} 
+          <DirectionsRenderer
+            directions={directionsResponse}
+            routeIndex={safestRouteIndex}
             options={{
+              routeIndex: safestRouteIndex,
               polylineOptions: {
                 strokeColor: routeHazards.length > 0 ? '#ef4444' : '#10b981',
                 strokeWeight: 5,

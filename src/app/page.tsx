@@ -150,7 +150,7 @@ function HalfWheelCarousel() {
         cardEl.style.pointerEvents = isActive ? 'auto' : (isVisible ? 'auto' : 'none');
         
         // Update container filter (brightness only, to prevent chrome backdrop filter blur bugs)
-        cardEl.style.filter = isVisible ? `brightness(${0.35 + 0.65 * prox})` : 'brightness(0.2)';
+        cardEl.style.filter = isVisible ? `brightness(${0.45 + 0.55 * prox})` : 'brightness(0.2)';
 
         // Update image blur filter directly
         const imgEl = cardEl.querySelector('img');
@@ -243,7 +243,7 @@ function HalfWheelCarousel() {
         width: isMobile ? '240px' : '420px',
         height: isMobile ? '240px' : '420px',
         borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(16, 185, 129, 0.06) 0%, transparent 70%)',
+        background: 'radial-gradient(circle, var(--accent-tint) 0%, transparent 70%)',
         pointerEvents: 'none',
         filter: 'blur(30px)',
         right: '-10%',
@@ -259,7 +259,7 @@ function HalfWheelCarousel() {
         onMouseUp={handleMouseUp}
         style={{
           position: 'absolute',
-          right: isMobile ? '-10%' : '-15%',
+          right: isMobile ? '-10%' : '-16%',
           width: isMobile ? '380px' : '650px',
           height: isMobile ? '380px' : '600px',
           display: 'flex',
@@ -288,13 +288,13 @@ function HalfWheelCarousel() {
                 width: `${cardWidth}px`,
                 height: `${cardHeight}px`,
                 transformOrigin: 'center center',
-                background: isActive ? 'rgba(16, 16, 16, 0.8)' : 'rgba(10, 10, 10, 0.65)',
+                background: isActive ? 'var(--card-2)' : 'var(--card)',
                 backdropFilter: 'blur(20px)',
                 WebkitBackdropFilter: 'blur(20px)',
-                border: isActive ? '1px solid hsl(142, 72%, 40%)' : '1px solid rgba(255, 255, 255, 0.03)',
+                border: isActive ? '1px solid var(--accent)' : '1px solid var(--border)',
                 boxShadow: isActive 
-                  ? '0 25px 50px -12px rgba(16, 185, 129, 0.22), 0 0 35px rgba(16, 185, 129, 0.08)' 
-                  : '0 10px 30px rgba(0, 0, 0, 0.5)',
+                  ? 'var(--shadow-lg), var(--shadow-glow)' 
+                  : 'var(--shadow-sm)',
                 borderRadius: isMobile ? '16px' : '24px',
                 padding: isMobile ? '1rem 0.75rem' : '1.75rem 1.5rem',
                 display: 'flex',
@@ -303,7 +303,7 @@ function HalfWheelCarousel() {
                 justifyContent: 'space-between',
                 textAlign: 'center' as const,
                 cursor: 'pointer',
-                transition: 'border 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.35s cubic-bezier(0.16, 1, 0.3, 1), background 0.35s cubic-bezier(0.16, 1, 0.3, 1)'
+                transition: 'border 0.35s var(--ease-out), box-shadow 0.35s var(--ease-out), background 0.35s var(--ease-out)'
               }}
             >
               {/* Premium Glow effect behind active card */}
@@ -315,7 +315,7 @@ function HalfWheelCarousel() {
                   right: '-15px',
                   bottom: '-15px',
                   borderRadius: isMobile ? '20px' : '30px',
-                  background: 'radial-gradient(circle, rgba(16, 185, 129, 0.15) 0%, transparent 75%)',
+                  background: 'radial-gradient(circle, var(--accent-tint) 0%, transparent 75%)',
                   pointerEvents: 'none',
                   zIndex: -1
                 }} />
@@ -326,8 +326,8 @@ function HalfWheelCarousel() {
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: '0.4rem',
-                background: isActive ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 255, 255, 0.03)',
-                color: isActive ? 'hsl(142, 72%, 45%)' : '#4b5563',
+                background: isActive ? 'var(--accent-tint)' : 'var(--surface-hover)',
+                color: isActive ? 'var(--accent)' : 'var(--muted)',
                 padding: isMobile ? '0.2rem 0.5rem' : '0.35rem 0.75rem',
                 borderRadius: '100px',
                 fontSize: isMobile ? '0.58rem' : '0.68rem',
@@ -340,14 +340,14 @@ function HalfWheelCarousel() {
                   width: '6px',
                   height: '6px',
                   borderRadius: '50%',
-                  background: isActive ? 'hsl(142, 72%, 45%)' : '#4b5563',
-                  boxShadow: isActive ? '0 0 8px hsl(142, 72%, 45%)' : 'none',
+                  background: isActive ? 'var(--accent)' : 'var(--muted)',
+                  boxShadow: isActive ? '0 0 8px var(--accent)' : 'none',
                   display: 'inline-block'
                 }} />
                 {item.category}
               </div>
 
-              {/* Colorful spotlight restoration for active image */}
+              {/* Image box */}
               <div style={{
                 position: 'relative',
                 width: '100%',
@@ -374,7 +374,7 @@ function HalfWheelCarousel() {
                 <h3 style={{ 
                   fontSize: isMobile ? '0.9rem' : '1.2rem', 
                   fontWeight: 800, 
-                  color: isActive ? 'hsl(142, 72%, 45%)' : '#ffffff',
+                  color: isActive ? 'var(--accent)' : 'var(--foreground)',
                   marginBottom: isMobile ? '0.35rem' : '0.5rem',
                   fontFamily: "'Plus Jakarta Sans', sans-serif",
                   letterSpacing: '-0.01em',
@@ -384,7 +384,7 @@ function HalfWheelCarousel() {
                 </h3>
                 <p style={{ 
                   fontSize: isMobile ? '0.7rem' : '0.8rem', 
-                  color: isActive ? '#9ca3af' : '#4b5563',
+                  color: 'var(--muted)',
                   lineHeight: isMobile ? 1.45 : 1.55,
                   margin: 0,
                   transition: 'color 0.35s ease'
@@ -416,7 +416,7 @@ function HalfWheelCarousel() {
               borderRadius: '50%',
               border: 'none',
               padding: 0,
-              background: idx === activeIndex ? 'hsl(var(--primary))' : 'rgba(255,255,255,0.18)',
+              background: idx === activeIndex ? 'var(--accent)' : 'var(--border-strong)',
               transition: 'all 0.4s ease',
               cursor: 'pointer',
               transform: idx === activeIndex ? 'scale(1.25)' : 'scale(1)'
@@ -437,6 +437,7 @@ export default function Home() {
 
   const [isMobile, setIsMobile] = useState(false);
   const [spotlight, setSpotlight] = useState({ x: -1000, y: -1000 });
+  const [heroActive, setHeroActive] = useState(false);
 
   useEffect(() => {
     // 1. Initialize Lenis Smooth Scroll
@@ -534,27 +535,26 @@ export default function Home() {
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     setSpotlight({ x: e.clientX, y: e.clientY });
+    setHeroActive(true);
   };
 
   const handleMouseLeave = () => {
-    setSpotlight({ x: -1000, y: -1000 });
+    setHeroActive(false);
   };
 
   return (
-    <div 
-      ref={containerRef} 
-      onMouseMove={handleMouseMove}
-      onMouseLeave={handleMouseLeave}
-      style={{ 
-        background: '#070707', 
-        color: '#f3f4f6',
+    <div
+      ref={containerRef}
+      style={{
+        background: 'var(--background)',
+        color: 'var(--foreground)',
         position: 'relative',
         fontFamily: "'Inter', sans-serif",
         overflowX: 'hidden'
       }}
     >
-      
-      {/* Spotlight glow following the cursor */}
+
+      {/* Spotlight glow — only active while the cursor is within the hero */}
       <div style={{
         position: 'fixed',
         top: 0,
@@ -563,15 +563,21 @@ export default function Home() {
         height: '100vh',
         pointerEvents: 'none',
         zIndex: 99,
-        background: `radial-gradient(450px at ${spotlight.x}px ${spotlight.y}px, hsla(var(--primary), 0.05), transparent 85%)`
+        opacity: heroActive ? 1 : 0,
+        transition: 'opacity 0.3s ease',
+        background: `radial-gradient(450px at ${spotlight.x}px ${spotlight.y}px, var(--accent-glow), transparent 85%)`
       }} />
 
       {/* Hero Section */}
-      <section ref={heroRef} style={{
+      <section
+        ref={heroRef}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        style={{
         minHeight: 'calc(100vh - 70px)',
         display: 'flex',
         alignItems: 'center',
-        padding: isMobile ? '4rem 1.25rem 4rem 1.25rem' : '6rem 2rem 5rem 2rem',
+        padding: isMobile ? '7rem 1.25rem 4rem 1.25rem' : '6rem 2rem 5rem 2rem',
         position: 'relative',
         overflow: 'hidden'
       }}>
@@ -582,10 +588,10 @@ export default function Home() {
           left: 0,
           width: '100%',
           height: '100%',
-          opacity: 0.015,
+          opacity: 0.08,
           zIndex: 1,
           pointerEvents: 'none',
-          backgroundImage: 'linear-gradient(to right, #ffffff 1px, transparent 1px), linear-gradient(to bottom, #ffffff 1px, transparent 1px)',
+          backgroundImage: 'linear-gradient(to right, var(--border) 1px, transparent 1px), linear-gradient(to bottom, var(--border) 1px, transparent 1px)',
           backgroundSize: '40px 40px'
         }} />
 
@@ -600,7 +606,7 @@ export default function Home() {
           
           {/* Left Text Column */}
           <div ref={textContainerRef} style={{ maxWidth: '580px', zIndex: 12 }}>
-            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', background: 'hsla(var(--primary), 0.1)', color: 'hsl(var(--primary))', padding: '0.4rem 0.8rem', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', background: 'var(--accent-tint)', color: 'var(--accent)', padding: '0.4rem 0.8rem', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '1.5rem', border: '1px solid var(--border)' }}>
               <Sparkles size={12} /> Hyperlocal Civic Platform
             </div>
 
@@ -615,14 +621,14 @@ export default function Home() {
             }}>
               <span className="reveal-word">Rebuilding</span><br />
               <span className="reveal-word">Our</span>{' '}
-              <span className="reveal-word" style={{ color: 'hsl(var(--primary))' }}>City</span>{' '}
-              <span className="reveal-word" style={{ color: 'hsl(var(--primary))' }}>Together.</span>
+              <span className="reveal-word" style={{ color: 'var(--accent)' }}>City</span>{' '}
+              <span className="reveal-word" style={{ color: 'var(--accent)' }}>Together.</span>
             </h1>
 
             <p className="hero-para" style={{
               fontSize: 'clamp(1rem, 1.8vw, 1.15rem)',
               lineHeight: 1.6,
-              color: '#9ca3af',
+              color: 'var(--muted)',
               marginBottom: '2.5rem',
               maxWidth: '520px'
             }}>
@@ -646,49 +652,49 @@ export default function Home() {
       </section>
 
       {/* Stats Section */}
-      <section ref={statsRef} style={{ padding: '5rem 1.5rem', background: '#0a0a0a', borderTop: '1px solid rgba(255, 255, 255, 0.03)', borderBottom: '1px solid rgba(255, 255, 255, 0.03)' }}>
+      <section ref={statsRef} style={{ padding: '5rem 1.5rem', background: 'var(--background-secondary)', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
         <div className="container" style={{ display: 'flex', justifyContent: 'space-around', flexWrap: 'wrap', gap: '3rem', textAlign: 'center' }}>
           <div>
-            <h2 className="stat-number" data-target="1200" style={{ fontSize: '3rem', fontWeight: 800, color: 'hsl(var(--primary))', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>0+</h2>
-            <p style={{ textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.08em', color: '#6b7280', marginTop: '0.35rem', fontWeight: 600 }}>Validated Reports</p>
+            <h2 className="stat-number" data-target="1200" style={{ fontSize: '3rem', fontWeight: 800, color: 'var(--accent)', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>0+</h2>
+            <p style={{ textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.08em', color: 'var(--muted)', marginTop: '0.35rem', fontWeight: 600 }}>Validated Reports</p>
           </div>
           <div>
-            <h2 className="stat-number" data-target="380" style={{ fontSize: '3rem', fontWeight: 800, color: 'hsl(var(--secondary))', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>0+</h2>
-            <p style={{ textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.08em', color: '#6b7280', marginTop: '0.35rem', fontWeight: 600 }}>Resolved SLA Cases</p>
+            <h2 className="stat-number" data-target="380" style={{ fontSize: '3rem', fontWeight: 800, color: 'var(--accent)', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>0+</h2>
+            <p style={{ textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.08em', color: 'var(--muted)', marginTop: '0.35rem', fontWeight: 600 }}>Resolved SLA Cases</p>
           </div>
           <div>
-            <h2 className="stat-number" data-target="99" style={{ fontSize: '3rem', fontWeight: 800, color: 'hsl(var(--accent))', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>0+</h2>
-            <p style={{ textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.08em', color: '#6b7280', marginTop: '0.35rem', fontWeight: 600 }}>AI Analysis Accuracy</p>
+            <h2 className="stat-number" data-target="99" style={{ fontSize: '3rem', fontWeight: 800, color: 'var(--accent)', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>0+</h2>
+            <p style={{ textTransform: 'uppercase', fontSize: '0.75rem', letterSpacing: '0.08em', color: 'var(--muted)', marginTop: '0.35rem', fontWeight: 600 }}>AI Analysis Accuracy</p>
           </div>
         </div>
       </section>
 
       {/* Live Activity Ticker (Infinite Marquee) */}
-      <div className="marquee-container">
+      <div className="marquee-container" style={{ background: 'var(--card-2)', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
         <div className="marquee-content">
           {[
-            { text: "PWD field crew dispatched to Ward 12 for Pothole repair", color: "hsl(var(--primary))" },
-            { text: "Garbage dumping issue resolved on MG Road within 12h", color: "hsl(var(--accent))" },
-            { text: "AI routed active sewage leakage complaint to WSSB Division", color: "hsl(var(--secondary))" },
-            { text: "DISCOM crew replacing broken streetlights in Ward 7", color: "hsl(var(--warning))" },
-            { text: "Horticulture Department cleared fallen tree blocking arterial road", color: "hsl(var(--primary))" },
-            { text: "Citizen validated high-risk manhole repair on Residency Road", color: "hsl(var(--destructive))" },
+            { text: "PWD field crew dispatched to Ward 12 for Pothole repair", color: "var(--accent)" },
+            { text: "Garbage dumping issue resolved on MG Road within 12h", color: "var(--accent)" },
+            { text: "AI routed active sewage leakage complaint to WSSB Division", color: "var(--accent)" },
+            { text: "DISCOM crew replacing broken streetlights in Ward 7", color: "var(--accent)" },
+            { text: "Horticulture Department cleared fallen tree blocking arterial road", color: "var(--accent)" },
+            { text: "Citizen validated high-risk manhole repair on Residency Road", color: "var(--accent)" },
           ].map((item, idx) => (
-            <div key={idx} className="marquee-item">
+            <div key={idx} className="marquee-item" style={{ color: 'var(--foreground)' }}>
               <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: item.color, display: 'inline-block' }}></span>
               <span>{item.text}</span>
             </div>
           ))}
           {/* Duplicate list to ensure clean gapless infinite loop */}
           {[
-            { text: "PWD field crew dispatched to Ward 12 for Pothole repair", color: "hsl(var(--primary))" },
-            { text: "Garbage dumping issue resolved on MG Road within 12h", color: "hsl(var(--accent))" },
-            { text: "AI routed active sewage leakage complaint to WSSB Division", color: "hsl(var(--secondary))" },
-            { text: "DISCOM crew replacing broken streetlights in Ward 7", color: "hsl(var(--warning))" },
-            { text: "Horticulture Department cleared fallen tree blocking arterial road", color: "hsl(var(--primary))" },
-            { text: "Citizen validated high-risk manhole repair on Residency Road", color: "hsl(var(--destructive))" },
+            { text: "PWD field crew dispatched to Ward 12 for Pothole repair", color: "var(--accent)" },
+            { text: "Garbage dumping issue resolved on MG Road within 12h", color: "var(--accent)" },
+            { text: "AI routed active sewage leakage complaint to WSSB Division", color: "var(--accent)" },
+            { text: "DISCOM crew replacing broken streetlights in Ward 7", color: "var(--accent)" },
+            { text: "Horticulture Department cleared fallen tree blocking arterial road", color: "var(--accent)" },
+            { text: "Citizen validated high-risk manhole repair on Residency Road", color: "var(--accent)" },
           ].map((item, idx) => (
-            <div key={`dup-${idx}`} className="marquee-item">
+            <div key={`dup-${idx}`} className="marquee-item" style={{ color: 'var(--foreground)' }}>
               <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: item.color, display: 'inline-block' }}></span>
               <span>{item.text}</span>
             </div>
@@ -697,10 +703,10 @@ export default function Home() {
       </div>
 
       {/* Bento Grid (Interest Section) */}
-      <section ref={bentoRef} style={{ padding: '8rem 1.5rem', background: '#070707' }}>
+      <section ref={bentoRef} style={{ padding: '8rem 1.5rem', background: 'var(--background)' }}>
         <div className="container">
           <div style={{ marginBottom: '5rem', textAlign: 'center' }}>
-            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'hsl(var(--primary))', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Engine Architecture</span>
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Engine Architecture</span>
             <h2 className="shimmer-text" style={{ fontSize: '2.4rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '-0.02em', marginTop: '0.5rem', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Civic Infrastructure Engine</h2>
           </div>
 
@@ -710,37 +716,37 @@ export default function Home() {
             gap: '1.5rem'
           }}>
             
-            <div className="card premium-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '2.5rem', background: '#0a0a0a', border: '1px solid rgba(255, 255, 255, 0.03)' }}>
-              <div style={{ background: 'hsla(var(--primary), 0.08)', color: 'hsl(var(--primary))', padding: '0.8rem', borderRadius: 'var(--radius)', width: 'fit-content' }}>
+            <div className="card premium-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '2.5rem', background: 'var(--card)', border: '1px solid var(--border)' }}>
+              <div style={{ background: 'var(--accent-tint)', color: 'var(--accent)', padding: '0.8rem', borderRadius: 'var(--radius)', width: 'fit-content' }}>
                 <Flame size={24} />
               </div>
               <div>
                 <h3 style={{ fontSize: '1.2rem', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '-0.01em', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Agentic AI Routing</h3>
-                <p style={{ color: '#6b7280', fontSize: '0.9rem', lineHeight: 1.6 }}>
+                <p style={{ color: 'var(--muted)', fontSize: '0.9rem', lineHeight: 1.6 }}>
                   Our AI agent parses complaints and auto-routes them to the correct Indian department (PWD, SWM, WSSB) with formatted official correspondence.
                 </p>
               </div>
             </div>
 
-            <div className="card premium-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '2.5rem', background: '#0a0a0a', border: '1px solid rgba(255, 255, 255, 0.03)' }}>
-              <div style={{ background: 'hsla(var(--secondary), 0.08)', color: 'hsl(var(--secondary))', padding: '0.8rem', borderRadius: 'var(--radius)', width: 'fit-content' }}>
+            <div className="card premium-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '2.5rem', background: 'var(--card)', border: '1px solid var(--border)' }}>
+              <div style={{ background: 'var(--accent-tint)', color: 'var(--accent)', padding: '0.8rem', borderRadius: 'var(--radius)', width: 'fit-content' }}>
                 <CheckSquare size={24} />
               </div>
               <div>
                 <h3 style={{ fontSize: '1.2rem', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '-0.01em', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>Gemini Vision Check</h3>
-                <p style={{ color: '#6b7280', fontSize: '0.9rem', lineHeight: 1.6 }}>
+                <p style={{ color: 'var(--muted)', fontSize: '0.9rem', lineHeight: 1.6 }}>
                   Strict pre-posting image analysis. Every photo is validated using Gemini Vision to filter selfies, spam, and invalid reports.
                 </p>
               </div>
             </div>
 
-            <div className="card premium-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '2.5rem', background: '#0a0a0a', border: '1px solid rgba(255, 255, 255, 0.03)' }}>
-              <div style={{ background: 'hsla(var(--accent), 0.08)', color: 'hsl(var(--accent))', padding: '0.8rem', borderRadius: 'var(--radius)', width: 'fit-content' }}>
+            <div className="card premium-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', padding: '2.5rem', background: 'var(--card)', border: '1px solid var(--border)' }}>
+              <div style={{ background: 'var(--accent-tint)', color: 'var(--accent)', padding: '0.8rem', borderRadius: 'var(--radius)', width: 'fit-content' }}>
                 <ShieldCheck size={24} />
               </div>
               <div>
                 <h3 style={{ fontSize: '1.2rem', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '-0.01em', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>SLA Enforcement</h3>
-                <p style={{ color: '#6b7280', fontSize: '0.9rem', lineHeight: 1.6 }}>
+                <p style={{ color: 'var(--muted)', fontSize: '0.9rem', lineHeight: 1.6 }}>
                   Automated SLA countdown tracking based on severity. Delayed updates trigger automatic escalations to local municipal commissioners.
                 </p>
               </div>
@@ -751,12 +757,12 @@ export default function Home() {
       </section>
 
       {/* Action Footer Call-to-Action */}
-      <section style={{ padding: '8rem 1.5rem', textAlign: 'center', background: '#0a0a0a', borderTop: '1px solid rgba(255, 255, 255, 0.03)' }}>
+      <section style={{ padding: '8rem 1.5rem', textAlign: 'center', background: 'var(--background-secondary)', borderTop: '1px solid var(--border)' }}>
         <div className="container" style={{ maxWidth: '800px' }}>
           <h2 style={{ fontSize: 'clamp(2rem, 3.5vw, 2.8rem)', fontWeight: 800, textTransform: 'uppercase', marginBottom: '1.5rem', letterSpacing: '-0.02em', fontFamily: "'Plus Jakarta Sans', sans-serif" }}>
             Ready to shape your neighborhood?
           </h2>
-          <p style={{ color: '#6b7280', fontSize: '1.05rem', maxWidth: '600px', margin: '0 auto 2.5rem auto', lineHeight: 1.6 }}>
+          <p style={{ color: 'var(--muted)', fontSize: '1.05rem', maxWidth: '600px', margin: '0 auto 2.5rem auto', lineHeight: 1.6 }}>
             Create an account in seconds to begin reporting, validating, and holding local authorities accountable.
           </p>
           <Link href="/signup" className="btn btn-primary" style={{ padding: '1rem 2.5rem', fontSize: '0.95rem', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 700 }}>
@@ -766,7 +772,7 @@ export default function Home() {
       </section>
 
       {/* Mini Footer */}
-      <footer style={{ padding: '2rem 1.5rem', borderTop: '1px solid rgba(255, 255, 255, 0.03)', background: '#070707', fontSize: '0.85rem', color: '#4b5563' }}>
+      <footer style={{ padding: '2rem 1.5rem', borderTop: '1px solid var(--border)', background: 'var(--background)', fontSize: '0.85rem', color: 'var(--muted)' }}>
         <div className="container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
           <span>© {new Date().getFullYear()} Community Hero. Designed in Stripe/Linear style.</span>
           <div style={{ display: 'flex', gap: '1.5rem' }}>

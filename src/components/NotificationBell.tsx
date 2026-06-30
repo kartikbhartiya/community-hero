@@ -95,13 +95,13 @@ export default function NotificationBell() {
   const getEventIcon = (type: string) => {
     switch (type) {
       case 'resolved':
-        return <CheckCircle size={14} color="hsl(var(--accent))" />;
+        return <CheckCircle size={14} color="var(--accent)" />;
       case 'escalated':
-        return <AlertTriangle size={14} color="hsl(var(--destructive))" />;
+        return <AlertTriangle size={14} color="var(--destructive)" />;
       case 'in_progress':
-        return <Clock size={14} color="hsl(var(--warning))" />;
+        return <Clock size={14} color="var(--warning)" />;
       default:
-        return <ShieldAlert size={14} color="hsl(var(--primary))" />;
+        return <ShieldAlert size={14} color="var(--primary)" />;
     }
   };
 
@@ -116,7 +116,7 @@ export default function NotificationBell() {
         style={{
           background: 'none',
           border: 'none',
-          color: dropdownOpen ? 'hsl(var(--primary))' : '#a3a3a3',
+          color: dropdownOpen ? 'var(--accent)' : 'var(--muted)',
           cursor: 'pointer',
           padding: '0.4rem',
           display: 'flex',
@@ -134,9 +134,9 @@ export default function NotificationBell() {
             right: '2px',
             width: '8px',
             height: '8px',
-            background: 'hsl(var(--primary))',
+            background: 'var(--destructive)',
             borderRadius: '50%',
-            border: '2px solid hsl(var(--card))'
+            border: '2px solid var(--card)'
           }} />
         )}
       </button>
@@ -147,42 +147,43 @@ export default function NotificationBell() {
           position: 'absolute',
           top: '2.5rem',
           right: 0,
-          background: 'rgba(12, 12, 12, 0.95)',
-          backdropFilter: 'blur(20px)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
+          background: 'rgb(var(--card-rgb) / 0.95)',
+          backdropFilter: 'blur(20px) saturate(160%)',
+          WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+          border: '1px solid var(--border)',
           borderRadius: '12px',
           width: '280px',
           maxHeight: '360px',
           overflowY: 'auto',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+          boxShadow: 'var(--shadow-lg)',
           zIndex: 9999,
           padding: '0.5rem 0'
         }}>
-          <div style={{ padding: '0.5rem 1rem', borderBottom: '1px solid rgba(255, 255, 255, 0.05)', fontSize: '0.75rem', fontWeight: 700, color: '#737373', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          <div style={{ padding: '0.5rem 1rem', borderBottom: '1px solid var(--border)', fontSize: '0.75rem', fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Live Platform Activity
           </div>
 
           {notifications.length === 0 ? (
-            <div style={{ padding: '1.5rem', textAlign: 'center', color: '#737373', fontSize: '0.78rem' }}>
+            <div style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--muted)', fontSize: '0.78rem' }}>
               No recent activity log found.
             </div>
           ) : (
             notifications.map((notif) => (
               <div key={notif.id} style={{
                 padding: '0.65rem 1rem',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.03)',
+                borderBottom: '1px solid var(--border)',
                 fontSize: '0.78rem',
                 lineHeight: 1.4,
                 display: 'flex',
                 gap: '0.5rem',
                 alignItems: 'flex-start',
-                color: '#e5e7eb'
+                color: 'var(--foreground-secondary)'
               }}>
                 <div style={{ marginTop: '0.15rem' }}>{getEventIcon(notif.type)}</div>
                 <div>
-                  <div style={{ color: '#ffffff', fontWeight: 600 }}>{notif.issueTitle}</div>
-                  <div style={{ color: '#9ca3af' }}>{notif.message}</div>
-                  <div style={{ fontSize: '0.65rem', color: '#6b7280', marginTop: '0.2rem' }}>
+                  <div style={{ color: 'var(--foreground)', fontWeight: 600 }}>{notif.issueTitle}</div>
+                  <div style={{ color: 'var(--foreground-secondary)' }}>{notif.message}</div>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--muted)', marginTop: '0.2rem' }}>
                     {new Date(notif.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </div>
                 </div>

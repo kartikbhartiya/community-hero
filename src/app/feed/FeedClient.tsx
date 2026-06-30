@@ -70,11 +70,11 @@ export default function FeedClient() {
               <span className={`badge badge-${issue.status.toLowerCase()}`}>{issue.status}</span>
             </div>
             
-            <p style={{ color: 'hsl(var(--foreground))', opacity: 0.8, fontSize: '0.9rem', marginBottom: '1rem', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+            <p style={{ color: 'var(--foreground)', opacity: 0.8, fontSize: '0.9rem', marginBottom: '1rem', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
               {issue.description}
             </p>
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: '#737373', marginBottom: '1rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '1rem' }}>
               <MapPin size={14} />
               <span>{issue.lat.toFixed(4)}, {issue.lng.toFixed(4)}</span>
               <span style={{ margin: '0 0.5rem' }}>•</span>
@@ -82,16 +82,16 @@ export default function FeedClient() {
               <span>{new Date(issue.created_at).toLocaleDateString()}</span>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid hsla(var(--border), 0.5)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '1rem', borderTop: '1px solid rgb(var(--border-rgb) / 0.5)' }}>
               <div style={{ display: 'flex', gap: '1rem' }}>
                 <button 
                   onClick={() => handleUpvote(issue.id, issue.upvotes)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: 'none', border: 'none', color: 'hsl(var(--primary))', cursor: 'pointer', fontWeight: 500 }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontWeight: 500 }}
                 >
                   <ThumbsUp size={16} />
                   {issue.upvotes}
                 </button>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: '#737373', fontSize: '0.9rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', color: 'var(--muted)', fontSize: '0.9rem' }}>
                   <MessageSquare size={16} />
                   {issue.comments?.[0]?.count || 0}
                 </div>
@@ -106,7 +106,7 @@ export default function FeedClient() {
       </div>
       
       {issues.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '3rem', color: '#737373' }}>
+        <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--muted)' }}>
           No issues reported yet. Be the first to report an issue in your community!
         </div>
       )}

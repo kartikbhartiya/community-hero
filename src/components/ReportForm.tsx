@@ -1,11 +1,20 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Camera, MapPin, CheckCircle, Loader2, ShieldAlert, AlertCircle, Mic } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import styles from './ReportForm.module.css';
 
+// SHA-256 of a file's bytes — used to detect the exact same photo being re-submitted.
+async function computeSha256(file: File): Promise<string> {
+  const buf = await file.arrayBuffer();
+  const hashBuf = await crypto.subtle.digest('SHA-256', buf);
+  return Array.from(new Uint8Array(hashBuf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 export default function ReportForm() {
+  const router = useRouter();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   
@@ -17,10 +26,14 @@ export default function ReportForm() {
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
 
   const [location, setLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [locationLabel, setLocationLabel] = useState<string | null>(null);
+  const [accuracy, setAccuracy] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [uploadStatus, setUploadStatus] = useState<string>('');
   const [isSuccess, setIsSuccess] = useState(false);
+  const [earnedPoints, setEarnedPoints] = useState(0);
   const [isOfflineQueued, setIsOfflineQueued] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
@@ -63,7 +76,7 @@ export default function ReportForm() {
                 confidence: aiData?.confidence || 0.85,
                 safety_risk: aiData?.safety_risk || 'medium',
                 department: aiData?.department || 'General Administration',
-                reporter_name: user?.user_metadata?.name || 'Anonymous Citizen',
+                reporter_name: user?.user_metadata?.name || user?.email?.split('@')[0] || 'Anonymous Citizen',
                 reporter_email: user?.email || null,
                 language: item.language
               }]);
@@ -108,31 +121,68 @@ export default function ReportForm() {
   };
 
   const getLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          });
-        },
-        (err) => {
-          setError('Unable to retrieve your location. Please check permissions.');
-        }
-      );
-    } else {
+    setError(null);
+    if (!navigator.geolocation) {
       setError('Geolocation is not supported by your browser.');
+      return;
     }
+    setLocating(true);
+    setLocationLabel(null);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        setLocation({ lat, lng });
+        setAccuracy(position.coords.accuracy ? Math.round(position.coords.accuracy) : null);
+        // Reverse geocode to the most specific area name available
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`,
+            { headers: { Accept: 'application/json' } }
+          );
+          if (res.ok) {
+            const data = await res.json();
+            const a = data?.address || {};
+            const parts = [
+              a.road || a.pedestrian || a.footway || a.neighbourhood,
+              a.suburb || a.neighbourhood || a.city_district || a.village || a.hamlet,
+              a.city || a.town || a.municipality || a.county,
+            ].filter(Boolean);
+            const unique = Array.from(new Set(parts));
+            setLocationLabel(unique.length ? unique.join(', ') : (data?.display_name || null));
+          }
+        } catch {
+          /* fall back silently to raw coordinates */
+        }
+        setLocating(false);
+      },
+      (err) => {
+        setLocating(false);
+        setError(
+          err.code === err.PERMISSION_DENIED
+            ? 'Location permission denied. Please enable location access in your browser settings.'
+            : 'Unable to retrieve your location. Please try again.'
+        );
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
   };
 
   // Web Speech API Voice Dictation
   const startVoiceDictation = (field: 'title' | 'description') => {
     if (typeof window === 'undefined') return;
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      alert("Voice dictation is not supported in this browser. Please use Chrome or Safari.");
+    if (isRecording) return; // already listening — avoid InvalidStateError
+    // Web Speech API needs a secure context (https or localhost).
+    if (!window.isSecureContext && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      setError('Voice input needs a secure connection. Open the app on http://localhost or over HTTPS.');
       return;
     }
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setError('Voice input is not supported in this browser. Please use Chrome or Edge — or type your report.');
+      return;
+    }
+    setError(null);
 
     const recognition = new SpeechRecognition();
     recognition.continuous = false;
@@ -155,8 +205,20 @@ export default function ReportForm() {
     };
 
     recognition.onerror = (e: any) => {
-      console.error(e);
       setIsRecording(null);
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        setError('Microphone access was denied. Allow microphone permission in your browser (address-bar icon) and try again.');
+      } else if (e.error === 'no-speech') {
+        setError('No speech detected. Please speak clearly after pressing the mic.');
+      } else if (e.error === 'audio-capture') {
+        setError('No microphone detected. Please connect a mic and allow access.');
+      } else if (e.error === 'network') {
+        setError('Voice service unreachable. Voice input needs Chrome or Edge with an internet connection.');
+      } else if (e.error === 'language-not-supported') {
+        setError('Voice input is not available for the selected language. Try English or type instead.');
+      } else if (e.error !== 'aborted') {
+        setError('Voice input failed. Please use Chrome/Edge with a mic, or type your report.');
+      }
     };
 
     recognition.onend = () => {
@@ -285,11 +347,23 @@ export default function ReportForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Posting requires an account (viewing is public). Skip the check while
+    // offline so queued reports still work.
+    if (typeof navigator !== 'undefined' && navigator.onLine) {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setError('Please sign in to submit a report. Redirecting to login…');
+        setTimeout(() => router.push('/login?error=Please sign in to report an issue'), 1000);
+        return;
+      }
+    }
+
     if (!title || !description || !location) {
       setError('Please provide title, description, and location.');
       return;
     }
-    
+
     setIsLoading(true);
     setError(null);
     setValidationError(null);
@@ -311,6 +385,27 @@ export default function ReportForm() {
         setIsSuccess(true);
         setIsLoading(false);
         return;
+      }
+
+      // Exact-duplicate image guard — the same photo cannot be reported twice.
+      let imageHash: string | null = null;
+      if (mediaType === 'image' && imageFile) {
+        try {
+          imageHash = await computeSha256(imageFile);
+          const { data: dup } = await supabase
+            .from('issues')
+            .select('id, title')
+            .eq('image_sha256', imageHash)
+            .limit(1)
+            .maybeSingle();
+          if (dup) {
+            setError(`This exact photo has already been reported${dup.title ? ` ("${dup.title}")` : ''}. Please take a fresh photo of the actual issue.`);
+            setIsLoading(false);
+            return;
+          }
+        } catch {
+          /* hashing is best-effort; continue if it fails */
+        }
       }
 
       let imageUrl = null;
@@ -450,6 +545,7 @@ export default function ReportForm() {
           lat: location.lat,
           lng: location.lng,
           image_url: imageUrl,
+          image_sha256: imageHash,
           video_url: videoUrl,
           category: aiData?.category || 'Other',
           severity: severity,
@@ -460,7 +556,7 @@ export default function ReportForm() {
           safety_risk: safetyRisk,
           department: aiData?.department || 'General Administration',
           estimated_cost: numericCost ? String(numericCost) : (aiData?.estimated_cost || null),
-          reporter_name: user?.user_metadata?.name || 'Anonymous Citizen',
+          reporter_name: user?.user_metadata?.name || user?.email?.split('@')[0] || 'Anonymous Citizen',
           reporter_email: user?.email || null,
           sla_hours: slaHours,
           sla_due_at: slaDueDate.toISOString(),
@@ -481,6 +577,31 @@ export default function ReportForm() {
         }]);
       }
 
+      // 🏆 Gamification: award civic Hero Points to the reporter (existing users.hero_score)
+      if (user?.email) {
+        try {
+          const { data: profile } = await supabase
+            .from('users').select('hero_score, badges').eq('email', user.email).single();
+          const earned = 50 + (safetyRisk === 'high' ? 30 : 0);
+          const newScore = (profile?.hero_score || 0) + earned;
+          const badges = new Set<string>(profile?.badges || []);
+          badges.add('First Responder');
+          if (newScore >= 500) badges.add('Ward Leader');
+          await supabase.from('users').upsert(
+            {
+              email: user.email,
+              name: user.user_metadata?.name || user.email.split('@')[0],
+              hero_score: newScore,
+              badges: Array.from(badges),
+            },
+            { onConflict: 'email' }
+          );
+          setEarnedPoints(earned);
+        } catch {
+          /* point award is non-fatal */
+        }
+      }
+
       setIsSuccess(true);
     } catch (err: any) {
       console.error(err);
@@ -494,17 +615,22 @@ export default function ReportForm() {
     return (
       <div className={styles.formContainer}>
         <div className={styles.successMessage}>
-          <CheckCircle className={styles.successIcon} size={64} style={{ color: isDuplicateLinked ? 'hsl(var(--primary))' : 'hsl(var(--accent))' }} />
+          <CheckCircle className={styles.successIcon} size={64} style={{ color: isDuplicateLinked ? 'var(--primary)' : 'var(--accent)' }} />
           <h2 style={{ fontFamily: 'Outfit', fontWeight: 700 }}>
             {isDuplicateLinked ? 'Duplicate Report Merged' : isOfflineQueued ? 'Report Queued Offline' : 'Report Logged Successfully'}
           </h2>
-          <p style={{ marginTop: '1rem', color: 'hsl(var(--foreground))', opacity: 0.8, lineHeight: 1.6 }}>
+          <p style={{ marginTop: '1rem', color: 'var(--foreground)', opacity: 0.8, lineHeight: 1.6 }}>
             {isDuplicateLinked
               ? 'Our AI duplicate detection system identified a matching active complaint already registered in your vicinity. To avoid duplicates and boost ticket priority, we have upvoted and merged your report into the existing case!'
               : isOfflineQueued 
                 ? 'Connectivity is offline. Your report has been saved to your local device cache and will automatically submit the moment connection is restored.'
                 : 'Thank you for being a Community Hero. Your issue has been logged, routed to the responsible SLA department, and is now live on the city map.'}
           </p>
+          {!isDuplicateLinked && !isOfflineQueued && earnedPoints > 0 && (
+            <div style={{ marginTop: '1.25rem', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', background: 'rgb(var(--accent-rgb) / 0.12)', color: 'var(--accent)', border: '1px solid rgb(var(--accent-rgb) / 0.3)', padding: '0.5rem 1rem', borderRadius: '999px', fontWeight: 700, fontSize: '0.9rem' }}>
+              <CheckCircle size={16} /> +{earnedPoints} Hero Points earned
+            </div>
+          )}
           <button 
             className="btn btn-primary" 
             style={{ marginTop: '2rem', width: '100%' }}
@@ -522,9 +648,9 @@ export default function ReportForm() {
       {validationError && (
         <div className={styles.modalOverlay}>
           <div className={styles.modalContent}>
-            <ShieldAlert size={56} style={{ color: 'hsl(var(--destructive))', marginBottom: '1.5rem', display: 'inline' }} />
+            <ShieldAlert size={56} style={{ color: 'var(--destructive)', marginBottom: '1.5rem', display: 'inline' }} />
             <h3 style={{ fontSize: '1.4rem', fontWeight: 700, fontFamily: 'Outfit', marginBottom: '1rem' }}>AI Validation Alert</h3>
-            <p style={{ color: 'hsl(var(--foreground))', opacity: 0.85, fontSize: '0.95rem', lineHeight: 1.6, marginBottom: '2rem' }}>
+            <p style={{ color: 'var(--foreground)', opacity: 0.85, fontSize: '0.95rem', lineHeight: 1.6, marginBottom: '2rem' }}>
               {validationError}
             </p>
             <button 
@@ -587,7 +713,7 @@ export default function ReportForm() {
               >
                 <Camera className={styles.fileUploadIcon} size={36} />
                 <p style={{ fontWeight: 600, fontSize: '0.9rem' }}>Tap to capture image or select video</p>
-                <p style={{ fontSize: '0.75rem', color: '#737373', marginTop: '0.25rem' }}>Cloudinary & Supabase video analysis active</p>
+                <p style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.25rem' }}>Cloudinary & Supabase video analysis active</p>
               </div>
             ) : (
               <div>
@@ -631,7 +757,7 @@ export default function ReportForm() {
             
             {isLoading && (imageFile || videoFile) && uploadProgress > 0 && (
               <div style={{ marginTop: '1rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#737373', fontWeight: 500 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--muted)', fontWeight: 500 }}>
                   <span>{uploadStatus}</span>
                   <span>{uploadProgress}%</span>
                 </div>
@@ -649,12 +775,12 @@ export default function ReportForm() {
                 type="button"
                 onClick={() => startVoiceDictation('title')}
                 style={{
-                  background: isRecording === 'title' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                  border: isRecording === 'title' ? '1px solid #ef4444' : '1px solid rgba(255,255,255,0.08)',
+                  background: isRecording === 'title' ? 'rgb(var(--destructive-rgb) / 0.15)' : 'var(--surface-hover)',
+                  border: isRecording === 'title' ? '1px solid var(--destructive)' : '1px solid var(--surface-hover)',
                   borderRadius: '6px',
                   padding: '0.2rem 0.5rem',
                   fontSize: '0.72rem',
-                  color: isRecording === 'title' ? '#ef4444' : '#a3a3a3',
+                  color: isRecording === 'title' ? 'var(--destructive)' : 'var(--muted)',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '0.25rem',
@@ -684,12 +810,12 @@ export default function ReportForm() {
                 type="button"
                 onClick={() => startVoiceDictation('description')}
                 style={{
-                  background: isRecording === 'description' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                  border: isRecording === 'description' ? '1px solid #ef4444' : '1px solid rgba(255,255,255,0.08)',
+                  background: isRecording === 'description' ? 'rgb(var(--destructive-rgb) / 0.15)' : 'var(--surface-hover)',
+                  border: isRecording === 'description' ? '1px solid var(--destructive)' : '1px solid var(--surface-hover)',
                   borderRadius: '6px',
                   padding: '0.2rem 0.5rem',
                   fontSize: '0.72rem',
-                  color: isRecording === 'description' ? '#ef4444' : '#a3a3a3',
+                  color: isRecording === 'description' ? 'var(--destructive)' : 'var(--muted)',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '0.25rem',
@@ -714,14 +840,34 @@ export default function ReportForm() {
           <div className={styles.formGroup}>
             <label className={styles.label}>GPS Location</label>
             {location ? (
-              <div className={styles.locationText}>
-                <MapPin size={16} />
-                Location secured: {location.lat.toFixed(5)}, {location.lng.toFixed(5)}
+              <div className={styles.locationText} style={{ alignItems: 'flex-start' }}>
+                <CheckCircle size={16} color="var(--accent)" style={{ flexShrink: 0, marginTop: '2px' }} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                  <span>{locationLabel || `Location secured: ${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}`}</span>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>
+                    {location.lat.toFixed(5)}, {location.lng.toFixed(5)}{accuracy != null ? ` · ±${accuracy}m` : ''}
+                  </span>
+                  {accuracy != null && accuracy > 500 && (
+                    <span style={{ fontSize: '0.68rem', color: 'var(--warning)' }}>
+                      Approximate (Wi-Fi/IP based). For a precise pin, use a phone with GPS or re-detect outdoors.
+                    </span>
+                  )}
+                  <button type="button" onClick={getLocation}
+                    style={{ alignSelf: 'flex-start', background: 'none', border: 'none', color: 'var(--accent)', fontSize: '0.72rem', fontWeight: 600, cursor: 'pointer', padding: 0, marginTop: '0.15rem' }}>
+                    Re-detect location
+                  </button>
+                </div>
+              </div>
+            ) : locating ? (
+              <div className={styles.locationBtn} style={{ cursor: 'progress', justifyContent: 'center', gap: '0.6rem' }}>
+                <span className="live-dot" style={{ width: '10px', height: '10px', display: 'inline-block' }} />
+                <MapPin size={18} className="pulse" />
+                Pinpointing your location…
               </div>
             ) : (
-              <button 
-                type="button" 
-                className={styles.locationBtn} 
+              <button
+                type="button"
+                className={styles.locationBtn}
                 onClick={getLocation}
                 disabled={isLoading}
               >

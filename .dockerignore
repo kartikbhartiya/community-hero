@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.env
+.env.local
+npm-debug.log
+README.md
+SETUP.md
+DEPLOY.md
+vibe2ship
+**/*.md
+.vscode
+.idea
+Dockerfile
+.dockerignore

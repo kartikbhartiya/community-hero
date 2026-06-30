@@ -1,919 +1,543 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import Link from 'next/link';
-import gsap from 'gsap';
-import { 
-  CheckCircle, 
-  AlertTriangle, 
-  ShieldAlert, 
-  MapPin, 
-  ThumbsUp, 
-  PlusCircle, 
-  Clock, 
-  Building2, 
-  Flame,
-  ChevronLeft,
-  ChevronRight,
-  Loader2,
-  Star,
-  Sparkles,
-  Route,
-  Send,
-  FileSpreadsheet,
-  Zap,
-  Layers,
-  Map as MapIcon,
-  Filter,
-  Eye,
-  Activity,
-  Award,
-  ChevronDown,
-  ChevronUp,
-  ExternalLink,
-  Wrench,
-  UserCheck
-} from 'lucide-react';
+import { motion } from 'framer-motion';
 import MapComponent from '@/components/MapComponent';
+import {
+  Activity, AlertTriangle, CheckCircle, Clock, FileSpreadsheet, Layers,
+  Flame, TrendingUp, Users, ThumbsUp, ArrowRight, Trophy, Radio, MapPin, Gauge,
+  Sparkles, BarChart3, Loader2, Search
+} from 'lucide-react';
+
+// ---------- helpers ----------
+function Count({ value, suffix = '' }: { value: number; suffix?: string }) {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    let raf = 0;
+    const start = performance.now();
+    const dur = 800;
+    const tick = (t: number) => {
+      const p = Math.min(1, (t - start) / dur);
+      setN(Math.round(value * (1 - Math.pow(1 - p, 3))));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [value]);
+  return <>{n.toLocaleString()}{suffix}</>;
+}
+
+function PulseText({ text }: { text: string }) {
+  const inline = (s: string, k: any) =>
+    s.split('**').map((p, i) => (i % 2 === 1 ? <strong key={`${k}-${i}`}>{p}</strong> : <span key={`${k}-${i}`}>{p}</span>));
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+      {text.split('\n').map(l => l.trim()).filter(Boolean).map((line, i) => {
+        const m = line.match(/^[*-]\s+(.*)$/);
+        return m
+          ? <div key={i} style={{ display: 'flex', gap: '0.5rem' }}><span style={{ color: 'var(--accent)' }}>▸</span><span>{inline(m[1], i)}</span></div>
+          : <p key={i}>{inline(line, i)}</p>;
+      })}
+    </div>
+  );
+}
+
+function timeAgo(d: string) {
+  const s = (Date.now() - new Date(d).getTime()) / 1000;
+  if (s < 60) return 'just now';
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
+function categoryEmoji(category: string) {
+  const c = (category || '').toLowerCase();
+  if (c.includes('pothole') || c.includes('road')) return '🕳️';
+  if (c.includes('light') || c.includes('street')) return '💡';
+  if (c.includes('garbage') || c.includes('waste')) return '🚮';
+  if (c.includes('water') || c.includes('leak') || c.includes('drain')) return '💧';
+  if (c.includes('tree') || c.includes('block')) return '🌳';
+  return '🚧';
+}
+
+const statusMeta: Record<string, { label: string; color: string }> = {
+  pending: { label: 'Pending', color: 'var(--warning)' },
+  in_progress: { label: 'In Progress', color: 'var(--info)' },
+  resolved: { label: 'Resolved', color: 'var(--accent)' },
+};
 
 export default function DashboardClient() {
-  const [userProfile, setUserProfile] = useState<any>(null);
   const [issues, setIssues] = useState<any[]>([]);
-  
-  // Real-time counting stats via GSAP
-  const [animatedStats, setAnimatedStats] = useState({
-    total: 0,
-    resolved: 0,
-    pending: 0,
-    highRisk: 0
-  });
-
-  const [activeTab, setActiveTab] = useState<'pending' | 'resolved'>('pending');
   const [loading, setLoading] = useState(true);
-  const [isLeftSidebarOpen, setIsLeftSidebarOpen] = useState(true);
-  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [profile, setProfile] = useState<any>(null);
+  const [showHeatmap, setShowHeatmap] = useState(true);
+  const [live, setLive] = useState(false);
+  const [pulse, setPulse] = useState<string | null>(null);
+  const [pulseLoading, setPulseLoading] = useState(false);
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'in_progress' | 'resolved'>('all');
 
-  // Map Controls State
-  const [mapTypeId, setMapTypeId] = useState<string>('roadmap');
-  const [forceHeatmap, setForceHeatmap] = useState(false);
-  const [showTraffic, setShowTraffic] = useState(false);
-
-  // Geolocation & Radius States
-  const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
-  const [nearMeRadius, setNearMeRadius] = useState(3.0); // Default: 3km radius slider
-
-  // Routing Overlay state
-  const [routeStart, setRouteStart] = useState('');
-  const [routeEnd, setRouteEnd] = useState('');
-  const [detectedRouteHazards, setDetectedRouteHazards] = useState<any[]>([]);
-
-  // AI Predictive Risk Forecasting state
-  const [forecastZones, setForecastZones] = useState<any[]>([]);
-
-  // Selection & Highlight hover sync states
-  const [highlightedIssueId, setHighlightedIssueId] = useState<string | null>(null);
-  const [selectedIssue, setSelectedIssue] = useState<any | null>(null);
-
-  // Collapsible Accordion Sections
-  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
-    overview: false,
-    incidents: false,
-    priority: true,
-    nearby: true,
-    insights: true,
-    validation: true
-  });
-
-  // Filters State
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('all');
-  const [selectedSeverityFilter, setSelectedSeverityFilter] = useState<string>('all');
-
-  // AI Chatbot state
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chatInput, setChatInput] = useState('');
-  const [chatHistory, setChatHistory] = useState<{ role: 'user' | 'bot'; text: string }[]>([
-    { role: 'bot', text: 'Tactical AI Advisor online. Ask me about cluster hazard risks, SLA breaches, or municipal work order updates.' }
-  ]);
-  const [chatLoading, setChatLoading] = useState(false);
-
-  useEffect(() => {
-    fetchDashboardData();
-    detectUserLocation();
-    fetchForecastData();
-  }, []);
-
-  const detectUserLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          });
-        },
-        (err) => console.log('Proximity geolocation access denied by user.', err)
-      );
-    }
-  };
-
-  const fetchForecastData = async () => {
-    try {
-      const res = await fetch('/api/forecast', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.zones) {
-          setForecastZones(data.zones);
-        }
-      }
-    } catch (e) {
-      console.warn('Forecast fetch failed:', e);
-    }
-  };
-
-  const getDistanceInKm = (lat1: number, lng1: number, lat2: number, lng2: number) => {
-    const R = 6371; // km
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
-  };
-
-  const animateStats = (targets: { total: number, resolved: number, pending: number, highRisk: number }) => {
-    const obj = { total: 0, resolved: 0, pending: 0, highRisk: 0 };
-    gsap.to(obj, {
-      total: targets.total,
-      resolved: targets.resolved,
-      pending: targets.pending,
-      highRisk: targets.highRisk,
-      duration: 1.4,
-      ease: 'power3.out',
-      onUpdate: () => {
-        setAnimatedStats({
-          total: Math.floor(obj.total),
-          resolved: Math.floor(obj.resolved),
-          pending: Math.floor(obj.pending),
-          highRisk: Math.floor(obj.highRisk)
-        });
-      }
-    });
-  };
-
-  const fetchDashboardData = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        const { data: profile } = await supabase
-          .from('users')
-          .select('*')
-          .eq('email', user.email)
-          .single();
-        
-        if (profile) {
-          setUserProfile(profile);
-        }
-      }
-
-      const { data: fetchedIssues } = await supabase
-        .from('issues')
-        .select('*')
-        .order('priority_score', { ascending: false });
-
-      if (fetchedIssues) {
-        setIssues(fetchedIssues);
-
-        const total = fetchedIssues.length;
-        const resolved = fetchedIssues.filter(i => i.status === 'resolved').length;
-        const pending = fetchedIssues.filter(i => i.status === 'pending').length;
-        const highRisk = fetchedIssues.filter(i => i.safety_risk === 'high').length;
-
-        animateStats({ total, resolved, pending, highRisk });
-      }
-    } catch (err) {
-      console.error('Error fetching dashboard data:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleValidateIssue = async (issue: any) => {
-    if (!userProfile) return;
-
-    const upvotedIssues = JSON.parse(localStorage.getItem('community_hero_upvotes') || '[]');
-    if (upvotedIssues.includes(issue.id)) {
-      alert("You have already validated/upvoted this issue.");
-      return;
-    }
-
-    setActionLoadingId(issue.id);
-    const newUpvotes = (issue.upvotes || 0) + 1;
-    const newPriorityScore = Math.min(100, (issue.priority_score || 25) + 5);
-
-    try {
-      const { error } = await supabase
-        .from('issues')
-        .update({ 
-          upvotes: newUpvotes,
-          priority_score: newPriorityScore
-        })
-        .eq('id', issue.id);
-
-      if (error) throw error;
-
-      upvotedIssues.push(issue.id);
-      localStorage.setItem('community_hero_upvotes', JSON.stringify(upvotedIssues));
-
-      await supabase.from('issue_events').insert([{
-        issue_id: issue.id,
-        type: 'duplicate_linked',
-        message: `Community validation by ${userProfile.name}. Upvotes raised to ${newUpvotes}.`
-      }]);
-
-      const newScore = (userProfile.hero_score || 0) + 5;
-      await supabase
-        .from('users')
-        .update({ hero_score: newScore })
-        .eq('email', userProfile.email);
-
-      setUserProfile({ ...userProfile, hero_score: newScore });
-      
-      const updatedIssues = issues.map(i => i.id === issue.id ? { ...i, upvotes: newUpvotes, priority_score: newPriorityScore } : i);
-      setIssues(updatedIssues);
-      
-      // Update selected issue detail states
-      if (selectedIssue && selectedIssue.id === issue.id) {
-        setSelectedIssue({ ...selectedIssue, upvotes: newUpvotes, priority_score: newPriorityScore });
-      }
-
-      const total = updatedIssues.length;
-      const resolved = updatedIssues.filter(i => i.status === 'resolved').length;
-      const pending = updatedIssues.filter(i => i.status === 'pending').length;
-      const highRisk = updatedIssues.filter(i => i.safety_risk === 'high').length;
-      animateStats({ total, resolved, pending, highRisk });
-
-    } catch (err) {
-      console.error('Failed to validate issue:', err);
-    } finally {
-      setActionLoadingId(null);
-    }
-  };
-
-  const handleChatSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!chatInput.trim()) return;
-
-    const userMsg = chatInput;
-    setChatInput('');
-    setChatHistory(prev => [...prev, { role: 'user', text: userMsg }]);
-    setChatLoading(true);
-
+  const generatePulse = async () => {
+    setPulseLoading(true);
     try {
       const res = await fetch('/api/citizen-advisor', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: userMsg,
-          history: chatHistory,
-          userLocation
-        })
+          message: 'Act as a city operations analyst. Based on the active reports, give a concise executive briefing as exactly 4 short markdown bullet points: (1) the top problem category, (2) the most urgent safety risk, (3) any SLA/overdue concern, (4) one recommended action for authorities. Keep each bullet under 18 words.',
+        }),
       });
-
       const data = await res.json();
-      setChatHistory(prev => [...prev, { role: 'bot', text: data.text || 'I could not process your query at this moment.' }]);
-    } catch (err) {
-      console.error(err);
-      setChatHistory(prev => [...prev, { role: 'bot', text: 'Error connecting to Municipal AI Assistant.' }]);
+      setPulse(data.text || 'No briefing available right now.');
+    } catch {
+      setPulse('Could not generate the briefing right now. Please try again.');
     } finally {
-      setChatLoading(false);
+      setPulseLoading(false);
     }
   };
 
-  const exportIssuesToCsv = () => {
-    if (issues.length === 0) return;
-    const headers = ['ID', 'Title', 'Category', 'Severity', 'Status', 'Upvotes', 'Department', 'Priority Score', 'Latitude', 'Longitude', 'Created At'];
-    const rows = issues.map(i => [
-      i.id,
-      `"${i.title.replace(/"/g, '""')}"`,
-      i.category,
-      i.severity,
-      i.status,
-      i.upvotes,
-      i.department,
-      i.priority_score,
-      i.lat,
-      i.lng,
-      i.created_at
-    ]);
-    const csvContent = "data:text/csv;charset=utf-8," 
-      + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `Community_Hero_Reports_${new Date().toLocaleDateString()}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const fetchIssues = async () => {
+    const { data } = await supabase.from('issues').select('*').order('created_at', { ascending: false });
+    if (data) setIssues(data);
   };
 
-  const getSlaDetails = (slaDueAtStr: string, status: string) => {
-    if (!slaDueAtStr) return { text: 'No SLA Set', color: '#737373', badgeClass: 'badge-pending' };
-    
-    const dueDate = new Date(slaDueAtStr);
-    const now = new Date();
-    const diffMs = dueDate.getTime() - now.getTime();
-    const diffHrs = Math.ceil(diffMs / (1000 * 60 * 60));
+  useEffect(() => {
+    (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.email) {
+        const { data: p } = await supabase.from('users').select('*').eq('email', user.email).single();
+        if (p) setProfile(p);
+      }
+      await fetchIssues();
+      setLoading(false);
+    })();
 
-    if (status === 'resolved') {
-      return { text: 'Resolved in SLA', color: 'hsl(var(--accent))', badgeClass: 'badge-resolved' };
+    // Advanced: live realtime sync (no-op if realtime isn't enabled on the table)
+    const ch = supabase
+      .channel('dash-issues-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'issues' }, () => {
+        setLive(true);
+        fetchIssues();
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, []);
+
+  // ---------- vitals ----------
+  const v = useMemo(() => {
+    const total = issues.length;
+    const pending = issues.filter(i => i.status === 'pending').length;
+    const inProgress = issues.filter(i => i.status === 'in_progress').length;
+    const resolved = issues.filter(i => i.status === 'resolved').length;
+    const highRisk = issues.filter(i => (i.safety_risk || '').toLowerCase() === 'high').length;
+    const upvotes = issues.reduce((a, i) => a + (i.upvotes || 0), 0);
+    const now = Date.now();
+    const overdue = issues.filter(i => i.status !== 'resolved' && i.sla_due_at && new Date(i.sla_due_at).getTime() < now).length;
+    const escalated = issues.filter(i => i.escalated).length;
+    const resolutionRate = total ? Math.round((resolved / total) * 100) : 0;
+
+    const resolvedWithTimes = issues.filter(i => i.status === 'resolved' && i.resolved_at && i.created_at);
+    const avgHours = resolvedWithTimes.length
+      ? Math.round(resolvedWithTimes.reduce((a, i) => a + (new Date(i.resolved_at).getTime() - new Date(i.created_at).getTime()) / 3.6e6, 0) / resolvedWithTimes.length)
+      : 0;
+
+    const reporters = new Set(issues.map(i => (i.reporter_email || i.reporter_name || '').toLowerCase()).filter(Boolean));
+
+    const byCategory = Object.entries(
+      issues.reduce((acc: Record<string, number>, i) => {
+        const k = i.category || 'Other';
+        acc[k] = (acc[k] || 0) + 1;
+        return acc;
+      }, {})
+    ).sort((a, b) => b[1] - a[1]).slice(0, 6);
+
+    const bySeverity = {
+      high: issues.filter(i => (i.severity || '').toLowerCase() === 'high').length,
+      medium: issues.filter(i => (i.severity || '').toLowerCase() === 'medium').length,
+      low: issues.filter(i => !['high', 'medium'].includes((i.severity || '').toLowerCase())).length,
+    };
+
+    // top contributors (real, from reports)
+    const map = new Map<string, any>();
+    issues.forEach(i => {
+      const key = (i.reporter_email || i.reporter_name || 'anonymous').toLowerCase();
+      const name = i.reporter_name || (i.reporter_email ? i.reporter_email.split('@')[0] : 'Anonymous');
+      const e = map.get(key) || { name, reports: 0, score: 0 };
+      e.reports += 1;
+      e.score += 50 + (i.upvotes || 0) * 10 + (i.status === 'resolved' ? 100 : 0);
+      e.name = name;
+      map.set(key, e);
+    });
+    const contributors = Array.from(map.values()).sort((a, b) => b.score - a.score).slice(0, 5);
+
+    // 7-day reporting trend (real, from created_at)
+    const trend: { label: string; count: number }[] = [];
+    for (let d = 6; d >= 0; d--) {
+      const day = new Date(); day.setHours(0, 0, 0, 0); day.setDate(day.getDate() - d);
+      const next = new Date(day); next.setDate(day.getDate() + 1);
+      const count = issues.filter(i => {
+        const t = new Date(i.created_at).getTime();
+        return t >= day.getTime() && t < next.getTime();
+      }).length;
+      trend.push({ label: day.toLocaleDateString(undefined, { weekday: 'short' }), count });
     }
 
-    if (diffHrs < 0) {
-      return { text: `Overdue by ${Math.abs(diffHrs)}h (Escalated)`, color: 'hsl(var(--destructive))', badgeClass: 'badge-high-risk' };
-    }
+    return { total, pending, inProgress, resolved, highRisk, upvotes, overdue, escalated, resolutionRate, avgHours, reporters: reporters.size, byCategory, bySeverity, contributors, trend };
+  }, [issues]);
 
-    if (diffHrs <= 24) {
-      return { text: `Due in ${diffHrs}h (Urgent)`, color: 'hsl(var(--warning))', badgeClass: 'badge-pending' };
-    }
-
-    return { text: `Due in ${diffHrs}h`, color: '#a3a3a3', badgeClass: 'badge-pending' };
+  const exportCsv = () => {
+    if (!issues.length) return;
+    const headers = ['ID', 'Title', 'Category', 'Severity', 'Status', 'Upvotes', 'Department', 'Priority', 'Lat', 'Lng', 'Created'];
+    const rows = issues.map(i => [i.id, `"${(i.title || '').replace(/"/g, '""')}"`, i.category, i.severity, i.status, i.upvotes, i.department, i.priority_score, i.lat, i.lng, i.created_at]);
+    const csv = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const a = document.createElement('a');
+    a.href = encodeURI(csv);
+    a.download = `community_hero_reports_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
 
-  const getCategoryEmoji = (category: string) => {
-    const cat = (category || '').toLowerCase();
-    if (cat.includes('pothole') || cat.includes('road')) return '🕳️';
-    if (cat.includes('light') || cat.includes('street')) return '💡';
-    if (cat.includes('garbage') || cat.includes('waste')) return '🚮';
-    if (cat.includes('water') || cat.includes('leak') || cat.includes('drain')) return '💧';
-    if (cat.includes('tree') || cat.includes('block')) return '🌳';
-    return '🚧';
-  };
+  if (loading) {
+    return (
+      <div className="container" style={{ padding: '2rem 1.5rem 5rem' }}>
+        <div className="kpi-grid" style={{ marginBottom: '1.1rem' }}>
+          {Array.from({ length: 8 }).map((_, i) => <div key={i} className="skeleton" style={{ height: '96px' }} />)}
+        </div>
+        <div className="dash-grid">
+          <div className="skeleton" style={{ height: '320px' }} />
+          <div className="skeleton" style={{ height: '320px' }} />
+        </div>
+      </div>
+    );
+  }
 
-  const getSeverityColor = (severity: string) => {
-    const sev = (severity || '').toLowerCase();
-    if (sev === 'high') return '#ef4444'; // Red
-    if (sev === 'medium') return '#eab308'; // Yellow
-    return '#3b82f6'; // Blue
-  };
+  const maxCat = Math.max(1, ...v.byCategory.map(c => c[1] as number));
+  const maxTrend = Math.max(1, ...v.trend.map(t => t.count));
 
-  const toggleSection = (section: string) => {
-    setCollapsedSections(prev => ({ ...prev, [section]: !prev[section] }));
-  };
-
-  // Filter lists based on bottom controller settings
-  const filteredIssues = issues.filter(issue => {
-    if (selectedCategoryFilter !== 'all') {
-      const match = getCategoryEmoji(issue.category);
-      if (selectedCategoryFilter === 'pothole' && match !== '🕳️') return false;
-      if (selectedCategoryFilter === 'streetlight' && match !== '💡') return false;
-      if (selectedCategoryFilter === 'garbage' && match !== '🚮') return false;
-      if (selectedCategoryFilter === 'water' && match !== '💧') return false;
+  const reportRows = issues.filter(i => {
+    if (statusFilter !== 'all' && i.status !== statusFilter) return false;
+    if (query) {
+      const q = query.toLowerCase();
+      return [i.title, i.category, i.reporter_name, i.department].some(f => (f || '').toLowerCase().includes(q));
     }
-
-    if (selectedSeverityFilter !== 'all') {
-      if (selectedSeverityFilter === 'high' && issue.severity?.toLowerCase() !== 'high') return false;
-      if (selectedSeverityFilter === 'medium' && issue.severity?.toLowerCase() !== 'medium') return false;
-    }
-
     return true;
   });
 
-  const pendingList = filteredIssues.filter(i => i.status === 'pending');
-  const resolvedList = filteredIssues.filter(i => i.status === 'resolved');
-  const activeList = activeTab === 'pending' ? pendingList : resolvedList;
-
-  // Near Me Filter
-  const nearMeList = activeList.filter(i => {
-    if (!userLocation) return false;
-    const dist = getDistanceInKm(userLocation.lat, userLocation.lng, i.lat, i.lng);
-    return dist <= nearMeRadius;
-  });
-
-  // Priority Queue sorted
-  const priorityQueueList = [...activeList].sort((a, b) => (b.priority_score || 0) - (a.priority_score || 0));
+  const kpis = [
+    { icon: Activity, label: 'Total Reports', value: v.total, color: 'var(--info)' },
+    { icon: Clock, label: 'Pending', value: v.pending, color: 'var(--warning)' },
+    { icon: Gauge, label: 'In Progress', value: v.inProgress, color: 'var(--info)' },
+    { icon: CheckCircle, label: 'Resolved', value: v.resolved, color: 'var(--accent)' },
+    { icon: TrendingUp, label: 'Resolution Rate', value: v.resolutionRate, suffix: '%', color: 'var(--accent)' },
+    { icon: Flame, label: 'High Risk', value: v.highRisk, color: 'var(--destructive)' },
+    { icon: AlertTriangle, label: 'SLA Overdue', value: v.overdue, color: 'var(--destructive)' },
+    { icon: ThumbsUp, label: 'Total Upvotes', value: v.upvotes, color: 'var(--accent)' },
+  ];
 
   return (
-    <div style={{ position: 'relative', width: '100vw', height: 'calc(100vh - 70px)', overflow: 'hidden', background: '#070707' }}>
-      
-      {/* 1. Immersive Edge-to-Edge Map Base */}
-      <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 1 }}>
-        <MapComponent 
-          externalIssues={activeList}
-          startAddress={routeStart} 
-          endAddress={routeEnd}
-          onHazardsDetected={(hazards) => setDetectedRouteHazards(hazards)}
-          forecastZones={forecastZones}
-          highlightedIssueId={highlightedIssueId}
-          onSelectIssue={(issue) => setSelectedIssue(issue)}
-          mapTypeId={mapTypeId}
-          forceHeatmap={forceHeatmap}
-          showTraffic={showTraffic}
-        />
-      </div>
-
-      {/* 2. Floating Operations Panel (Left Sidebar) */}
-      <div style={{
-        position: 'absolute',
-        top: '1.5rem',
-        left: isLeftSidebarOpen ? '1.5rem' : '-440px',
-        bottom: '1.5rem',
-        width: '400px',
-        background: 'rgba(12, 12, 12, 0.72)',
-        backdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
-        borderRadius: '24px',
-        boxShadow: '0 24px 64px rgba(0, 0, 0, 0.75)',
-        zIndex: 10,
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        transition: 'left 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
-      }}>
-        {/* Operations Header */}
-        <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Activity size={18} color="hsl(var(--primary))" className="pulse" />
-            <h2 style={{ fontSize: '1.05rem', fontWeight: 800, fontFamily: 'Outfit', letterSpacing: '-0.01em', color: '#ffffff', margin: 0 }}>
-              Tactical Operations
-            </h2>
+    <div className="container" style={{ padding: '1.5rem 1.5rem 5rem' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '1.5rem' }}>
+        <div>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: live ? 'var(--accent)' : 'var(--muted)', marginBottom: '0.5rem' }}>
+            <span className={live ? 'live-dot' : ''} style={{ width: '7px', height: '7px', borderRadius: '50%', background: live ? 'var(--accent)' : 'var(--muted)', display: 'inline-block' }} />
+            {live ? 'Live · Realtime synced' : 'Operations Overview'}
           </div>
-          <button 
-            onClick={exportIssuesToCsv}
-            className="btn btn-secondary"
-            style={{ padding: '0.35rem 0.6rem', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
-          >
-            <FileSpreadsheet size={12} /> Export CSV
-          </button>
+          <h1 style={{ fontSize: 'clamp(1.6rem, 3vw, 2.2rem)', fontWeight: 800 }}>
+            {profile?.name ? `Welcome, ${profile.name}` : 'Community Operations'}
+          </h1>
+          <p style={{ color: 'var(--muted)', marginTop: '0.25rem', fontSize: '0.95rem' }}>
+            Live civic intelligence across all reported issues · avg resolution {v.avgHours || '—'}h · {v.reporters} citizens engaged
+          </p>
         </div>
-
-        {/* Scrollable Collapsible Sections */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '0.85rem' }}>
-          
-          {/* Section 1: Overview & KPI Stats */}
-          <div style={{ marginBottom: '0.75rem', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '14px', overflow: 'hidden' }}>
-            <button 
-              onClick={() => toggleSection('overview')}
-              style={{ width: '100%', background: 'rgba(255,255,255,0.015)', border: 'none', padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', color: '#e5e7eb', fontSize: '0.8rem', fontWeight: 700 }}
-            >
-              <span>OPERATIONAL SUMMARY</span>
-              {collapsedSections.overview ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-            </button>
-            {!collapsedSections.overview && (
-              <div style={{ padding: '1rem', display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.5rem', background: 'rgba(0,0,0,0.2)' }}>
-                <div style={{ border: '1px solid rgba(255,255,255,0.05)', padding: '0.6rem', borderRadius: '10px' }}>
-                  <span style={{ display: 'block', fontSize: '0.62rem', color: '#a3a3a3', fontWeight: 600 }}>ACTIVE CASES</span>
-                  <span style={{ fontSize: '1.25rem', fontWeight: 800, color: 'hsl(var(--primary))' }}>{animatedStats.pending}</span>
-                </div>
-                <div style={{ border: '1px solid rgba(255,255,255,0.05)', padding: '0.6rem', borderRadius: '10px' }}>
-                  <span style={{ display: 'block', fontSize: '0.62rem', color: '#a3a3a3', fontWeight: 600 }}>RESOLVED LOGS</span>
-                  <span style={{ fontSize: '1.25rem', fontWeight: 800, color: 'hsl(var(--accent))' }}>{animatedStats.resolved}</span>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Section 2: Live Incidents Feed */}
-          <div style={{ marginBottom: '0.75rem', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '14px', overflow: 'hidden' }}>
-            <button 
-              onClick={() => toggleSection('incidents')}
-              style={{ width: '100%', background: 'rgba(255,255,255,0.015)', border: 'none', padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', color: '#e5e7eb', fontSize: '0.8rem', fontWeight: 700 }}
-            >
-              <span>INCIDENTS FEED ({activeList.length})</span>
-              {collapsedSections.incidents ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-            </button>
-            {!collapsedSections.incidents && (
-              <div style={{ padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '300px', overflowY: 'auto' }}>
-                {activeList.map(issue => (
-                  <div 
-                    key={issue.id}
-                    className="card"
-                    onMouseEnter={() => setHighlightedIssueId(issue.id)}
-                    onMouseLeave={() => setHighlightedIssueId(null)}
-                    onClick={() => setSelectedIssue(issue)}
-                    style={{ 
-                      padding: '0.75rem', 
-                      background: highlightedIssueId === issue.id ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.01)',
-                      border: highlightedIssueId === issue.id ? '1px solid hsl(var(--primary))' : '1px solid rgba(255,255,255,0.05)',
-                      borderRadius: '10px',
-                      cursor: 'pointer',
-                      transition: 'all 0.2s ease'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
-                      <span style={{ fontSize: '0.8rem' }}>{getCategoryEmoji(issue.category)} <strong>{issue.category}</strong></span>
-                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: getSeverityColor(issue.severity) }} />
-                    </div>
-                    <div style={{ fontSize: '0.82rem', fontWeight: 700, color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {issue.title}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Section 3: Priority Queue */}
-          <div style={{ marginBottom: '0.75rem', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '14px', overflow: 'hidden' }}>
-            <button 
-              onClick={() => toggleSection('priority')}
-              style={{ width: '100%', background: 'rgba(255,255,255,0.015)', border: 'none', padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', color: '#e5e7eb', fontSize: '0.8rem', fontWeight: 700 }}
-            >
-              <span>PRIORITY QUEUE (Sorted by AI)</span>
-              {collapsedSections.priority ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-            </button>
-            {!collapsedSections.priority && (
-              <div style={{ padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '250px', overflowY: 'auto' }}>
-                {priorityQueueList.slice(0, 5).map(issue => (
-                  <div 
-                    key={issue.id}
-                    onClick={() => setSelectedIssue(issue)}
-                    style={{ padding: '0.65rem', background: 'rgba(255,255,255,0.015)', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.76rem' }}>
-                      <span style={{ color: '#ffffff', fontWeight: 600 }}>{issue.title}</span>
-                      <span style={{ color: 'hsl(var(--primary))', fontWeight: 800 }}>P: {issue.priority_score || 25}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Section 4: Nearby Reports */}
-          <div style={{ marginBottom: '0.75rem', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '14px', overflow: 'hidden' }}>
-            <button 
-              onClick={() => toggleSection('nearby')}
-              style={{ width: '100%', background: 'rgba(255,255,255,0.015)', border: 'none', padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', color: '#e5e7eb', fontSize: '0.8rem', fontWeight: 700 }}
-            >
-              <span>NEARBY RADAR ({nearMeList.length})</span>
-              {collapsedSections.nearby ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-            </button>
-            {!collapsedSections.nearby && (
-              <div style={{ padding: '0.75rem', background: 'rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#a3a3a3' }}>
-                  <span>Proximity Radius:</span>
-                  <span style={{ color: 'hsl(var(--primary))', fontWeight: 700 }}>{nearMeRadius} km</span>
-                </div>
-                <input 
-                  type="range" 
-                  min="0.5" 
-                  max="15" 
-                  step="0.5" 
-                  value={nearMeRadius}
-                  onChange={(e) => setNearMeRadius(parseFloat(e.target.value))}
-                  style={{ width: '100%', accentColor: 'hsl(var(--primary))' }}
-                />
-              </div>
-            )}
-          </div>
-
-          {/* Section 5: AI Insights */}
-          <div style={{ marginBottom: '0.75rem', border: '1px solid rgba(255,255,255,0.04)', borderRadius: '14px', overflow: 'hidden' }}>
-            <button 
-              onClick={() => toggleSection('insights')}
-              style={{ width: '100%', background: 'rgba(255,255,255,0.015)', border: 'none', padding: '0.75rem 1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', color: '#e5e7eb', fontSize: '0.8rem', fontWeight: 700 }}
-            >
-              <span>AI FORECAST ZONES ({forecastZones.length})</span>
-              {collapsedSections.insights ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-            </button>
-            {!collapsedSections.insights && (
-              <div style={{ padding: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {forecastZones.map((zone, idx) => (
-                  <div key={idx} style={{ padding: '0.65rem', background: 'rgba(168, 85, 247, 0.05)', border: '1px solid rgba(168, 85, 247, 0.15)', borderRadius: '8px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', fontWeight: 700, color: '#a855f7' }}>
-                      <span>{zone.hazardType}</span>
-                      <span>Risk: {zone.riskScore}%</span>
-                    </div>
-                    <p style={{ fontSize: '0.72rem', color: '#a3a3a3', margin: '0.25rem 0 0 0' }}>{zone.reason}</p>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-        </div>
-
-        {/* Collapsible toggle bar footer */}
-        <div style={{ padding: '0.75rem', background: 'rgba(0,0,0,0.3)', borderTop: '1px solid rgba(255,255,255,0.05)', display: 'flex', gap: '0.5rem' }}>
-          <button 
-            onClick={() => setActiveTab(activeTab === 'pending' ? 'resolved' : 'pending')}
-            className="btn btn-secondary" 
-            style={{ flex: 1, padding: '0.5rem', fontSize: '0.76rem' }}
-          >
-            Show: {activeTab === 'pending' ? 'Resolved Logs' : 'Pending Verification'}
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button onClick={exportCsv} className="btn btn-secondary" style={{ fontSize: '0.82rem' }}>
+            <FileSpreadsheet size={15} /> Export CSV
           </button>
-          
-          <Link href="/report" className="btn btn-primary" style={{ flex: 1, padding: '0.5rem', fontSize: '0.76rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.2rem' }}>
-            <PlusCircle size={13} /> File Issue
+          <Link href="/report" className="btn btn-primary" style={{ fontSize: '0.82rem' }}>
+            <MapPin size={15} /> New Report
           </Link>
         </div>
       </div>
 
-      {/* Sidebar collapsible state handle */}
-      <button 
-        onClick={() => setIsLeftSidebarOpen(!isLeftSidebarOpen)}
-        style={{
-          position: 'absolute',
-          left: isLeftSidebarOpen ? '424px' : '1.5rem',
-          top: '50%',
-          transform: 'translateY(-50%)',
-          width: '24px',
-          height: '48px',
-          background: 'rgba(12, 12, 12, 0.72)',
-          backdropFilter: 'blur(20px)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-          borderLeft: 'none',
-          borderRadius: '0 8px 8px 0',
-          cursor: 'pointer',
-          zIndex: 100,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transition: 'left 0.4s cubic-bezier(0.16, 1, 0.3, 1)',
-          color: 'hsl(var(--foreground))'
-        }}
-      >
-        {isLeftSidebarOpen ? <ChevronLeft size={16} /> : <ChevronRight size={16} />}
-      </button>
-
-      {/* 3. Floating Bottom GIS map Console Overlay */}
-      <div style={{
-        position: 'absolute',
-        bottom: '1.5rem',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        zIndex: 20,
-        background: 'rgba(12, 12, 12, 0.72)',
-        backdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255, 255, 255, 0.08)',
-        borderRadius: '100px',
-        padding: '0.5rem 1.5rem',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '1.25rem',
-        boxShadow: '0 12px 40px rgba(0,0,0,0.5)'
-      }}>
-        
-        {/* Style selection */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-          <MapIcon size={14} color="#737373" />
-          <select 
-            value={mapTypeId}
-            onChange={(e) => setMapTypeId(e.target.value)}
-            style={{ background: 'transparent', border: 'none', color: '#e5e7eb', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', outline: 'none' }}
+      {/* KPI grid */}
+      <div className="kpi-grid" style={{ marginBottom: '1.4rem' }}>
+        {kpis.map((k, idx) => (
+          <motion.div
+            key={k.label}
+            className="card premium-card"
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: idx * 0.04, type: 'spring', stiffness: 300, damping: 26 }}
+            style={{ padding: '1rem 1.1rem' }}
           >
-            <option value="roadmap" style={{ background: '#121212' }}>Tactical Dark</option>
-            <option value="satellite" style={{ background: '#121212' }}>Imagery</option>
-            <option value="hybrid" style={{ background: '#121212' }}>Hybrid</option>
-            <option value="terrain" style={{ background: '#121212' }}>Terrain</option>
-          </select>
-        </div>
-
-        <div style={{ height: '14px', width: '1px', background: 'rgba(255,255,255,0.1)' }} />
-
-        {/* Overlay triggers */}
-        <button 
-          onClick={() => setForceHeatmap(!forceHeatmap)}
-          style={{ background: 'none', border: 'none', color: forceHeatmap ? 'hsl(var(--primary))' : '#737373', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-        >
-          <Layers size={13} /> Heatmap
-        </button>
-
-        <button 
-          onClick={() => setShowTraffic(!showTraffic)}
-          style={{ background: 'none', border: 'none', color: showTraffic ? 'hsl(var(--primary))' : '#737373', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
-        >
-          <Activity size={13} /> Traffic
-        </button>
-
-        <div style={{ height: '14px', width: '1px', background: 'rgba(255,255,255,0.1)' }} />
-
-        {/* Quick Severity filter */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-          <Filter size={13} color="#737373" />
-          <select 
-            value={selectedSeverityFilter}
-            onChange={(e) => setSelectedSeverityFilter(e.target.value)}
-            style={{ background: 'transparent', border: 'none', color: '#e5e7eb', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer', outline: 'none' }}
-          >
-            <option value="all" style={{ background: '#121212' }}>All Severity</option>
-            <option value="high" style={{ background: '#121212' }}>High Only</option>
-            <option value="medium" style={{ background: '#121212' }}>Medium+</option>
-          </select>
-        </div>
-
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--muted)', fontSize: '0.72rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '0.5rem' }}>
+              <k.icon size={15} color={k.color} /> {k.label}
+            </div>
+            <div style={{ fontSize: '1.9rem', fontWeight: 800, letterSpacing: '-0.02em', color: k.color }}>
+              <Count value={k.value} suffix={k.suffix} />
+            </div>
+          </motion.div>
+        ))}
       </div>
 
-      {/* 4. Floating Right Inspector panel */}
-      {selectedIssue && (
-        <div style={{
-          position: 'absolute',
-          top: '1.5rem',
-          right: '1.5rem',
-          bottom: '1.5rem',
-          width: '420px',
-          background: 'rgba(12, 12, 12, 0.75)',
-          backdropFilter: 'blur(20px)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
-          borderRadius: '24px',
-          boxShadow: '0 24px 64px rgba(0, 0, 0, 0.75)',
-          zIndex: 15,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          animation: 'fadeIn 0.3s ease'
-        }}>
-          {/* Header */}
-          <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'hsl(var(--primary))', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              INCIDENT INSPECTOR
-            </span>
-            <button 
-              onClick={() => setSelectedIssue(null)}
-              style={{ background: 'none', border: 'none', color: '#a3a3a3', cursor: 'pointer', fontSize: '1rem' }}
-            >
-              ✕
-            </button>
-          </div>
-
-          {/* Inspector Body */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem' }}>
-            
-            {/* Proof image */}
-            {selectedIssue.image_url ? (
-              <img 
-                src={selectedIssue.image_url} 
-                alt="Proof" 
-                style={{ width: '100%', height: '180px', objectFit: 'cover', borderRadius: '14px', marginBottom: '1.25rem', border: '1px solid rgba(255,255,255,0.08)' }} 
-              />
-            ) : (
-              <div style={{ width: '100%', height: '180px', background: 'rgba(255,255,255,0.01)', borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#737373', fontSize: '0.8rem', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '1.25rem' }}>
-                No Image Proof Provided
-              </div>
-            )}
-
-            {/* Info details */}
-            <h3 style={{ fontSize: '1.15rem', fontWeight: 800, color: 'white', marginBottom: '0.5rem', fontFamily: 'Outfit' }}>
-              {selectedIssue.title}
-            </h3>
-            <p style={{ fontSize: '0.85rem', color: '#a3a3a3', lineHeight: 1.5, marginBottom: '1.25rem' }}>
-              {selectedIssue.description}
-            </p>
-
-            {/* Meta tags Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.65rem', marginBottom: '1.5rem' }}>
-              <div style={{ background: 'rgba(255,255,255,0.02)', padding: '0.65rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.04)' }}>
-                <span style={{ display: 'block', fontSize: '0.65rem', color: '#737373' }}>AI PRIORITY</span>
-                <span style={{ fontSize: '0.9rem', fontWeight: 800, color: getSeverityColor(selectedIssue.severity), display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
-                  <Flame size={12} /> {selectedIssue.priority_score || 25}
-                </span>
-              </div>
-              <div style={{ background: 'rgba(255,255,255,0.02)', padding: '0.65rem', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.04)' }}>
-                <span style={{ display: 'block', fontSize: '0.65rem', color: '#737373' }}>DEPARTMENT</span>
-                <span style={{ fontSize: '0.76rem', fontWeight: 700, color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', marginTop: '0.15rem' }}>
-                  {selectedIssue.department || 'General Admin'}
-                </span>
-              </div>
-            </div>
-
-            {/* SLA Ticker */}
-            <div style={{ background: 'rgba(255, 255, 255, 0.02)', border: '1px solid rgba(255,255,255,0.04)', padding: '0.85rem 1rem', borderRadius: '14px', display: 'flex', flexDirection: 'column', gap: '0.35rem', marginBottom: '1.5rem' }}>
-              <span style={{ fontSize: '0.65rem', color: '#737373', fontWeight: 600 }}>SLA DUE STATUS</span>
-              <span style={{ fontSize: '0.85rem', fontWeight: 700, color: getSlaDetails(selectedIssue.sla_due_at, selectedIssue.status).color }}>
-                {getSlaDetails(selectedIssue.sla_due_at, selectedIssue.status).text}
-              </span>
-            </div>
-
-            {/* Action buttons */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-              {selectedIssue.status === 'pending' ? (
-                <button 
-                  onClick={() => handleValidateIssue(selectedIssue)}
-                  disabled={actionLoadingId === selectedIssue.id}
-                  className="btn btn-primary"
-                  style={{ width: '100%', padding: '0.75rem', fontSize: '0.82rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}
-                >
-                  <ThumbsUp size={14} /> Validate Incident ({selectedIssue.upvotes || 0})
-                </button>
-              ) : (
-                <div style={{ background: 'rgba(16, 185, 129, 0.06)', border: '1px solid rgba(16, 185, 129, 0.15)', padding: '0.75rem', borderRadius: '10px', textAlign: 'center', fontSize: '0.8rem', color: 'hsl(var(--accent))' }}>
-                  ✓ Issue has been resolved and closed.
-                </div>
-              )}
-
-              <Link href={`/issue/${selectedIssue.id}`} className="btn btn-secondary" style={{ width: '100%', padding: '0.75rem', fontSize: '0.82rem', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.35rem' }}>
-                <ExternalLink size={14} /> Open Review Logs
-              </Link>
-            </div>
-
-          </div>
+      {/* AI City Pulse — executive briefing */}
+      <div className="card premium-card aura-ring" style={{ marginBottom: '1.4rem', position: 'relative' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: pulse ? '1rem' : 0 }}>
+          <h3 style={{ fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+            <Sparkles size={16} color="var(--accent)" /> AI City Pulse — Executive Briefing
+          </h3>
+          <button onClick={generatePulse} disabled={pulseLoading} className="btn btn-primary" style={{ fontSize: '0.8rem' }}>
+            {pulseLoading ? <><Loader2 className="spin" size={14} /> Analyzing…</> : (pulse ? 'Regenerate' : 'Generate briefing')}
+          </button>
         </div>
-      )}
+        {pulse ? (
+          <div style={{ fontSize: '0.9rem', lineHeight: 1.6, color: 'var(--foreground-secondary)' }}><PulseText text={pulse} /></div>
+        ) : !pulseLoading && (
+          <p style={{ fontSize: '0.85rem', color: 'var(--muted)' }}>
+            Generate a live AI summary of the city&apos;s civic situation — top risks, SLA concerns, and a recommended action — grounded in current reports.
+          </p>
+        )}
+      </div>
 
-      {/* Floating Chatbot Indicator Overlay */}
-      <div style={{
-        position: 'absolute',
-        bottom: '1.5rem',
-        right: '1.5rem',
-        zIndex: 50,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'flex-end'
-      }}>
-        {chatOpen && (
-          <div className="card" style={{
-            width: '330px',
-            height: '400px',
-            background: 'rgba(12, 12, 12, 0.85)',
-            backdropFilter: 'blur(20px)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
-            borderRadius: '20px',
-            marginBottom: '1rem',
-            boxShadow: '0 12px 36px rgba(0,0,0,0.6)',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
-            padding: '1.25rem 1rem'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255, 255, 255, 0.08)', paddingBottom: '0.5rem', marginBottom: '0.75rem' }}>
-              <span style={{ fontSize: '0.85rem', fontWeight: 800, color: 'hsl(var(--primary))', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                <Sparkles size={14} /> AI Operations Assistant
-              </span>
-              <button 
-                onClick={() => setChatOpen(false)}
-                style={{ background: 'none', border: 'none', color: '#737373', cursor: 'pointer', fontSize: '0.85rem' }}
-              >
-                ✕
-              </button>
-            </div>
-
-            <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '0.75rem', paddingRight: '0.25rem' }}>
-              {chatHistory.map((msg, idx) => (
-                <div key={idx} style={{
-                  alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
-                  background: msg.role === 'user' ? 'hsl(var(--primary))' : 'rgba(255, 255, 255, 0.04)',
-                  color: '#ffffff',
-                  padding: '0.5rem 0.75rem',
-                  borderRadius: msg.role === 'user' ? '12px 12px 0 12px' : '12px 12px 12px 0',
-                  fontSize: '0.78rem',
-                  maxWidth: '85%',
-                  lineHeight: 1.4,
-                  wordBreak: 'break-word'
-                }}>
-                  {msg.text}
+      {/* Main grid */}
+      <div className="dash-grid">
+        {/* LEFT */}
+        <div className="dash-col">
+          {/* 7-day trend */}
+          <div className="card premium-card">
+            <h3 style={{ fontSize: '1rem', marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <BarChart3 size={16} color="var(--info)" /> Reports — Last 7 Days
+            </h3>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0.5rem', height: '130px', marginTop: '1rem' }}>
+              {v.trend.map((t, i) => (
+                <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.35rem' }}>
+                  <span style={{ fontSize: '0.7rem', fontWeight: 700, color: t.count ? 'var(--accent)' : 'var(--muted)' }}>{t.count}</span>
+                  <motion.div
+                    initial={{ height: 0 }}
+                    animate={{ height: `${(t.count / maxTrend) * 90}px` }}
+                    transition={{ duration: 0.6, delay: i * 0.05, ease: [0.16, 1, 0.3, 1] }}
+                    style={{ width: '100%', maxWidth: '34px', minHeight: '4px', borderRadius: '6px 6px 0 0', background: 'linear-gradient(180deg, var(--accent), var(--info))' }}
+                  />
+                  <span style={{ fontSize: '0.68rem', color: 'var(--muted)' }}>{t.label}</span>
                 </div>
               ))}
-              {chatLoading && (
-                <div style={{ alignSelf: 'flex-start', background: 'rgba(255, 255, 255, 0.03)', padding: '0.5rem 0.75rem', borderRadius: '12px 12px 12px 0', fontSize: '0.78rem', color: '#737373' }}>
-                  Analyzing command data...
-                </div>
-              )}
             </div>
-
-            <form onSubmit={handleChatSubmit} style={{ display: 'flex', gap: '0.5rem' }}>
-              <input 
-                type="text" 
-                className="input-field" 
-                placeholder="Query routing alerts..." 
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                style={{ fontSize: '0.78rem', padding: '0.4rem 0.75rem' }}
-              />
-              <button 
-                type="submit" 
-                className="btn btn-primary"
-                style={{ padding: '0.4rem 0.8rem', fontSize: '0.78rem', display: 'flex', alignItems: 'center' }}
-              >
-                <Send size={12} />
-              </button>
-            </form>
           </div>
-        )}
 
-        <button 
-          onClick={() => setChatOpen(!chatOpen)}
-          className="btn btn-primary animate-pulse"
-          style={{
-            width: '52px',
-            height: '52px',
-            borderRadius: '50%',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            boxShadow: '0 8px 24px rgba(16, 185, 129, 0.45)',
-            border: 'none',
-            padding: 0
-          }}
-        >
-          <Sparkles size={24} color="white" />
-        </button>
+          {/* Category breakdown */}
+          <div className="card premium-card">
+            <h3 style={{ fontSize: '1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Layers size={16} color="var(--accent)" /> Issues by Category
+            </h3>
+            {v.byCategory.length === 0 ? (
+              <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>No data yet.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.7rem' }}>
+                {v.byCategory.map(([cat, n]) => (
+                  <div key={cat}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: '0.3rem' }}>
+                      <span>{categoryEmoji(cat)} {cat}</span>
+                      <span style={{ color: 'var(--muted)', fontWeight: 600 }}>{n as number}</span>
+                    </div>
+                    <div style={{ height: '8px', borderRadius: '99px', background: 'var(--surface-hover)', overflow: 'hidden' }}>
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${((n as number) / maxCat) * 100}%` }}
+                        transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
+                        style={{ height: '100%', borderRadius: '99px', background: 'linear-gradient(90deg, var(--accent), var(--info))' }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Status + severity */}
+          <div className="card premium-card">
+            <h3 style={{ fontSize: '1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Activity size={16} color="var(--info)" /> Status & Severity
+            </h3>
+            {/* status bar */}
+            <div style={{ display: 'flex', height: '14px', borderRadius: '99px', overflow: 'hidden', marginBottom: '0.75rem', background: 'var(--surface-hover)' }}>
+              {(['pending', 'in_progress', 'resolved'] as const).map(s => {
+                const count = s === 'pending' ? v.pending : s === 'in_progress' ? v.inProgress : v.resolved;
+                const pct = v.total ? (count / v.total) * 100 : 0;
+                return <div key={s} title={`${statusMeta[s].label}: ${count}`} style={{ width: `${pct}%`, background: statusMeta[s].color, transition: 'width 0.6s var(--ease-out)' }} />;
+              })}
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1.25rem' }}>
+              {(['pending', 'in_progress', 'resolved'] as const).map(s => {
+                const count = s === 'pending' ? v.pending : s === 'in_progress' ? v.inProgress : v.resolved;
+                return (
+                  <span key={s} style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.78rem', color: 'var(--foreground-secondary)' }}>
+                    <span style={{ width: '9px', height: '9px', borderRadius: '50%', background: statusMeta[s].color }} /> {statusMeta[s].label} · {count}
+                  </span>
+                );
+              })}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.6rem' }}>
+              {([['High', v.bySeverity.high, 'var(--destructive)'], ['Medium', v.bySeverity.medium, 'var(--warning)'], ['Low', v.bySeverity.low, 'var(--info)']] as const).map(([label, n, c]) => (
+                <div key={label} style={{ border: '1px solid var(--border)', borderRadius: '12px', padding: '0.7rem', textAlign: 'center' }}>
+                  <div style={{ fontSize: '1.3rem', fontWeight: 800, color: c }}>{n}</div>
+                  <div style={{ fontSize: '0.7rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Recent reports */}
+          <div className="card premium-card">
+            <h3 style={{ fontSize: '1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Clock size={16} color="var(--warning)" /> Recent Reports
+            </h3>
+            {issues.length === 0 ? (
+              <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>No reports yet.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                {issues.slice(0, 6).map(i => (
+                  <Link key={i.id} href={`/issue/${i.id}`} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.7rem 0', borderBottom: '1px solid var(--border)' }}>
+                    <span style={{ fontSize: '1.2rem' }}>{categoryEmoji(i.category)}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: '0.88rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{i.title}</div>
+                      <div style={{ fontSize: '0.72rem', color: 'var(--muted)' }}>{i.department || i.category} · {timeAgo(i.created_at)}</div>
+                    </div>
+                    <span className={`badge badge-${i.status === 'resolved' ? 'resolved' : i.safety_risk === 'high' ? 'high-risk' : 'pending'}`}>{(statusMeta[i.status]?.label || i.status)}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* RIGHT */}
+        <div className="dash-col">
+          {/* Heatmap panel (smaller) */}
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.9rem 1.1rem', borderBottom: '1px solid var(--border)' }}>
+              <h3 style={{ fontSize: '0.95rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <MapPin size={15} color="var(--accent)" /> Issue Map
+              </h3>
+              <button
+                onClick={() => setShowHeatmap(s => !s)}
+                className="btn btn-secondary"
+                style={{ padding: '0.3rem 0.6rem', fontSize: '0.72rem' }}
+              >
+                <Layers size={12} /> {showHeatmap ? 'Heatmap' : 'Pins'}
+              </button>
+            </div>
+            <div style={{ height: '300px', position: 'relative' }}>
+              <MapComponent externalIssues={issues} forceHeatmap={showHeatmap} />
+            </div>
+          </div>
+
+          {/* Top contributors */}
+          <div className="card premium-card">
+            <h3 style={{ fontSize: '1rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Trophy size={16} color="var(--warning)" /> Top Contributors
+            </h3>
+            {v.contributors.length === 0 ? (
+              <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>No contributors yet.</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                {v.contributors.map((c, idx) => (
+                  <div key={c.name + idx} style={{ display: 'flex', alignItems: 'center', gap: '0.7rem' }}>
+                    <span style={{ width: '22px', height: '22px', borderRadius: '50%', background: idx === 0 ? 'var(--warning)' : 'var(--surface-hover)', color: idx === 0 ? '#000' : 'var(--muted)', display: 'grid', placeItems: 'center', fontSize: '0.72rem', fontWeight: 800 }}>{idx + 1}</span>
+                    <Users size={15} color="var(--muted)" />
+                    <span style={{ flex: 1, fontWeight: 600, fontSize: '0.86rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.name}</span>
+                    <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--accent)' }}>{c.score} pts</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <Link href="/leaderboard" className="link-underline" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem', marginTop: '1rem', fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 600 }}>
+              Full leaderboard <ArrowRight size={13} />
+            </Link>
+          </div>
+
+          {/* SLA / risk alert */}
+          <div className="card premium-card" style={{ borderColor: v.overdue > 0 ? 'rgb(var(--destructive-rgb) / 0.4)' : 'var(--border)' }}>
+            <h3 style={{ fontSize: '1rem', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <Radio size={16} color="var(--destructive)" /> SLA Watch
+            </h3>
+            <p style={{ fontSize: '0.85rem', color: 'var(--foreground-secondary)', lineHeight: 1.5 }}>
+              {v.overdue > 0
+                ? <><strong style={{ color: 'var(--destructive)' }}>{v.overdue}</strong> {v.overdue === 1 ? 'case has' : 'cases have'} breached their SLA window and should be escalated.</>
+                : 'All active cases are within their SLA windows. 🎯'}
+            </p>
+            {v.escalated > 0 && (
+              <p style={{ fontSize: '0.8rem', color: 'var(--muted)', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                <AlertTriangle size={13} color="var(--warning)" /> <strong style={{ color: 'var(--warning)' }}>{v.escalated}</strong> currently in the escalation cycle.
+              </p>
+            )}
+          </div>
+        </div>
       </div>
 
+      {/* All Reports — searchable + filterable table */}
+      <div className="card premium-card" style={{ marginTop: '1.4rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', marginBottom: '1rem' }}>
+          <h3 style={{ fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <FileSpreadsheet size={16} color="var(--accent)" /> All Reports ({reportRows.length})
+          </h3>
+          <div style={{ position: 'relative' }}>
+            <Search size={15} style={{ position: 'absolute', left: '0.7rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }} />
+            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search title, category, reporter…" className="input-field" style={{ paddingLeft: '2.1rem', fontSize: '0.82rem', minWidth: '220px' }} />
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '0.4rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+          {(['all', 'pending', 'in_progress', 'resolved'] as const).map(s => (
+            <button key={s} onClick={() => setStatusFilter(s)} style={{
+              padding: '0.3rem 0.75rem', borderRadius: '999px', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer',
+              border: `1px solid ${statusFilter === s ? 'var(--accent)' : 'var(--border)'}`,
+              background: statusFilter === s ? 'rgb(var(--accent-rgb) / 0.12)' : 'transparent',
+              color: statusFilter === s ? 'var(--accent)' : 'var(--foreground-secondary)',
+            }}>{s === 'all' ? 'All' : (statusMeta[s]?.label || s)}</button>
+          ))}
+        </div>
+
+        {reportRows.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '2.5rem', color: 'var(--muted)' }}>
+            No reports match. <Link href="/report" style={{ color: 'var(--accent)', fontWeight: 600 }}>Report an issue →</Link>
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.84rem' }}>
+              <thead>
+                <tr style={{ textAlign: 'left', color: 'var(--muted)', fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  <th style={{ padding: '0.5rem 0.6rem' }}>Issue</th>
+                  <th style={{ padding: '0.5rem 0.6rem' }}>Category</th>
+                  <th style={{ padding: '0.5rem 0.6rem' }}>Reporter</th>
+                  <th style={{ padding: '0.5rem 0.6rem' }}>Status</th>
+                  <th style={{ padding: '0.5rem 0.6rem' }}>Priority</th>
+                  <th style={{ padding: '0.5rem 0.6rem' }}>When</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {reportRows.map(i => (
+                  <tr key={i.id} style={{ borderTop: '1px solid var(--border)' }}>
+                    <td style={{ padding: '0.7rem 0.6rem', fontWeight: 600, maxWidth: '240px' }}>
+                      <span style={{ marginRight: '0.4rem' }}>{categoryEmoji(i.category)}</span>{i.title}
+                    </td>
+                    <td style={{ padding: '0.7rem 0.6rem', color: 'var(--foreground-secondary)', whiteSpace: 'nowrap' }}>{i.category}</td>
+                    <td style={{ padding: '0.7rem 0.6rem', color: 'var(--foreground-secondary)', whiteSpace: 'nowrap' }}>{i.reporter_name || '—'}</td>
+                    <td style={{ padding: '0.7rem 0.6rem' }}>
+                      <span className={`badge badge-${i.status === 'resolved' ? 'resolved' : i.safety_risk === 'high' ? 'high-risk' : 'pending'}`}>{statusMeta[i.status]?.label || i.status}</span>
+                    </td>
+                    <td style={{ padding: '0.7rem 0.6rem', fontWeight: 700, color: (i.priority_score || 0) >= 70 ? 'var(--destructive)' : 'var(--foreground-secondary)' }}>{i.priority_score || 0}</td>
+                    <td style={{ padding: '0.7rem 0.6rem', color: 'var(--muted)', whiteSpace: 'nowrap' }}>{timeAgo(i.created_at)}</td>
+                    <td style={{ padding: '0.7rem 0.6rem' }}><Link href={`/issue/${i.id}`} style={{ color: 'var(--accent)', fontWeight: 600 }}>View</Link></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

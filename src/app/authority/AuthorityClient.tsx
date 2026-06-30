@@ -46,6 +46,9 @@ export default function AuthorityClient() {
   const [authLoading, setAuthLoading] = useState(false);
   const [isAuthCardVisible, setIsAuthCardVisible] = useState(true);
 
+  // Navigation tabs
+  const [activeTab, setActiveTab] = useState<'operations' | 'summary'>('operations');
+
   // Database lists
   const [issues, setIssues] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -56,6 +59,10 @@ export default function AuthorityClient() {
   const [assignedOfficer, setAssignedOfficer] = useState('');
   const [repairCost, setRepairCost] = useState<string>('');
   const [repairNotes, setRepairNotes] = useState('');
+
+  // AI Dispatch Plan states
+  const [aiPlan, setAiPlan] = useState<any | null>(null);
+  const [generatingPlan, setGeneratingPlan] = useState(false);
 
   // Resolution upload states
   const [afterImageFile, setAfterImageFile] = useState<File | null>(null);
@@ -328,6 +335,36 @@ export default function AuthorityClient() {
     return publicUrl;
   };
 
+  const handleGeneratePlan = async () => {
+    if (!selectedIssue) return;
+    setGeneratingPlan(true);
+    try {
+      const res = await fetch('/api/authority/plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: selectedIssue.title,
+          description: selectedIssue.description,
+          category: selectedIssue.category,
+          severity: selectedIssue.severity
+        })
+      });
+      if (res.ok) {
+        const plan = await res.json();
+        setAiPlan(plan);
+        if (plan.suggested_officer) setAssignedOfficer(plan.suggested_officer);
+        if (plan.suggested_cost) setRepairCost(String(plan.suggested_cost));
+        if (plan.dispatch_memo) {
+          setRepairNotes(`AI DISPATCH MEMO: ${plan.dispatch_memo}\n\nMilestones:\n${plan.milestones.map((m: string) => `- ${m}`).join('\n')}\n\nMaterials Required:\n${plan.materials.map((m: string) => `- ${m}`).join('\n')}`);
+        }
+      }
+    } catch (err) {
+      console.error('Plan generation failed:', err);
+    } finally {
+      setGeneratingPlan(false);
+    }
+  };
+
   const handleVerifyResolution = async () => {
     if (!selectedIssue || !afterImagePreview || !afterImageFile) return;
 
@@ -477,13 +514,43 @@ ${selectedIssue.description}`;
   });
 
   // Calculate Metrics
-  const openCases = issues.filter(i => i.status === 'pending').length;
+  const openCases = issues.filter(i => i.status === 'pending' || i.status === 'in_progress').length;
   const resolvedCount = issues.filter(i => i.status === 'resolved').length;
   const escalatedCount = issues.filter(i => i.escalated).length;
   const activeDepts = new Set(issues.map(i => i.department).filter(Boolean)).size || 4;
   const totalCost = issues.reduce((sum, i) => sum + parseCost(i.estimated_cost), 0);
   const avgSlaHours = issues.length > 0 ? Math.round(issues.reduce((sum, i) => sum + (i.sla_hours || 72), 0) / issues.length) : 72;
   const avgConfidence = issues.length > 0 ? Math.round((issues.reduce((sum, i) => sum + (i.confidence || 0.85), 0) / issues.length) * 100) : 85;
+
+  // Custom Summary Analytics Calculations
+  const categoryCounts = issues.reduce((acc: any, i) => {
+    acc[i.category] = (acc[i.category] || 0) + 1;
+    return acc;
+  }, {} as Record<string, number>);
+  const sortedCategories = Object.entries(categoryCounts)
+    .sort((a: any, b: any) => b[1] - a[1])
+    .slice(0, 6);
+
+  const deptStats = issues.reduce((acc: any, i) => {
+    const dept = i.department || 'General';
+    if (!acc[dept]) acc[dept] = { total: 0, pending: 0, resolved: 0, cost: 0 };
+    acc[dept].total++;
+    if (i.status === 'resolved') acc[dept].resolved++;
+    else acc[dept].pending++;
+    acc[dept].cost += parseCost(i.estimated_cost);
+    return acc;
+  }, {} as Record<string, { total: number; pending: number; resolved: number; cost: number }>);
+
+  const severityCounts = issues.reduce((acc: any, i) => {
+    const sev = i.severity || 'Medium';
+    acc[sev] = (acc[sev] || 0) + 1;
+    return acc;
+  }, { High: 0, Medium: 0, Low: 0, Critical: 0 } as Record<string, number>);
+
+  const hotspotSummary = issues
+    .filter(i => (i.duplicate_count || 0) > 0 || i.upvotes > 2)
+    .sort((a, b) => ((b.duplicate_count || 0) + b.upvotes) - ((a.duplicate_count || 0) + a.upvotes))
+    .slice(0, 5);
 
   if (!isAuthenticated) {
     return (
@@ -492,7 +559,7 @@ ${selectedIssue.description}`;
         minHeight: 'calc(100vh - 70px)',
         alignItems: 'center',
         justifyContent: 'center',
-        background: 'linear-gradient(to bottom, #070707, #0e0e0e)',
+        background: 'var(--background)',
         padding: '2rem 1rem'
       }}>
         {/* Centered Glass Authentication Card */}
@@ -502,11 +569,10 @@ ${selectedIssue.description}`;
             maxWidth: '450px',
             width: '100%',
             padding: '3rem 2.5rem',
-            background: 'rgba(12, 12, 12, 0.72)',
-            backdropFilter: 'blur(24px)',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
+            background: 'var(--card)',
+            border: '1px solid var(--border-strong)',
             borderRadius: '24px',
-            boxShadow: '0 24px 64px rgba(0,0,0,0.8)',
+            boxShadow: 'var(--shadow-lg)',
             textAlign: 'center',
             opacity: isAuthCardVisible ? 1 : 0,
             transform: isAuthCardVisible ? 'translateY(0)' : 'translateY(20px)',
@@ -517,8 +583,8 @@ ${selectedIssue.description}`;
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            background: 'rgba(16, 185, 129, 0.1)',
-            color: 'hsl(var(--primary))',
+            background: 'var(--accent-tint)',
+            color: 'var(--accent)',
             width: '64px',
             height: '64px',
             borderRadius: '50%',
@@ -527,24 +593,24 @@ ${selectedIssue.description}`;
             <Shield size={32} />
           </div>
           
-          <h2 style={{ fontSize: '1.55rem', fontWeight: 800, fontFamily: 'Outfit', color: 'white', margin: '0 0 0.5rem 0' }}>
+          <h2 style={{ fontSize: '1.55rem', fontWeight: 800, fontFamily: 'Outfit', color: 'var(--foreground)', margin: '0 0 0.5rem 0' }}>
             Authority Administration Portal
           </h2>
-          <p style={{ color: '#a3a3a3', fontSize: '0.85rem', lineHeight: 1.5, marginBottom: '2rem' }}>
+          <p style={{ color: 'var(--muted)', fontSize: '0.85rem', lineHeight: 1.5, marginBottom: '2rem' }}>
             Restricted access for verified municipal authorities.
           </p>
-
+ 
           <form onSubmit={handleUnlockPortal} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
             <div style={{ position: 'relative', textAlign: 'left' }}>
-              <label htmlFor="auth-password" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: '#737373', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              <label htmlFor="auth-password" style={{ display: 'block', fontSize: '0.82rem', fontWeight: 600, color: 'var(--foreground-secondary)', marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Password PIN
               </label>
               <div style={{ position: 'relative' }}>
-                <Lock size={16} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: '#737373' }} />
+                <Lock size={16} style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }} />
                 <input 
                   id="auth-password"
                   type="password" 
-                  className="input-field"
+                  className="input-field" 
                   placeholder="Enter administrator PIN"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -553,13 +619,13 @@ ${selectedIssue.description}`;
                 />
               </div>
             </div>
-
+ 
             {authError && (
-              <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.15)', color: '#ef4444', padding: '0.6rem', borderRadius: '8px', fontSize: '0.78rem' }}>
+              <div style={{ background: 'rgb(var(--destructive-rgb) / 0.08)', border: '1px solid rgb(var(--destructive-rgb) / 0.15)', color: 'var(--destructive)', padding: '0.6rem', borderRadius: '8px', fontSize: '0.78rem' }}>
                 {authError}
               </div>
             )}
-
+ 
             <button 
               type="submit" 
               className="btn btn-primary"
@@ -568,12 +634,12 @@ ${selectedIssue.description}`;
             >
               {authLoading ? <Loader2 size={16} className="spin" /> : 'Unlock Portal'}
             </button>
-
+ 
             <button 
               type="button" 
               onClick={handleDemoLogin}
               className="btn btn-secondary"
-              style={{ width: '100%', padding: '0.75rem', fontSize: '0.85rem', border: '1px solid rgba(255,255,255,0.08)', background: 'rgba(255,255,255,0.02)' }}
+              style={{ width: '100%', padding: '0.75rem', fontSize: '0.85rem', border: '1px solid var(--border)', background: 'var(--background-secondary)' }}
             >
               Demo Login
             </button>
@@ -588,8 +654,8 @@ ${selectedIssue.description}`;
       display: 'flex', 
       flexDirection: 'column', 
       minHeight: 'calc(100vh - 100px)', 
-      background: '#070707', 
-      color: '#e5e7eb', 
+      background: 'var(--background)', 
+      color: 'var(--foreground)', 
       fontFamily: 'Inter, sans-serif',
       padding: '1.5rem',
       gap: '1.5rem'
@@ -598,14 +664,56 @@ ${selectedIssue.description}`;
       {/* Top Operations Header Control Bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, fontFamily: 'Outfit', color: 'white', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
-            <ShieldCheck size={26} color="hsl(var(--primary))" /> Smart City Command Console
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 800, fontFamily: 'Outfit', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+            <ShieldCheck size={26} color="var(--accent)" /> Smart City Command Console
           </h1>
-          <p style={{ color: '#737373', fontSize: '0.82rem', marginTop: '0.15rem' }}>
+          <p style={{ color: 'var(--muted)', fontSize: '0.82rem', marginTop: '0.15rem' }}>
             Real-time municipal dispatch logs, AI-driven de-duplication telemetry, and resolution proof audits.
           </p>
         </div>
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+          {/* Tab Switcher */}
+          <div style={{
+            display: 'flex',
+            background: 'var(--card-2)',
+            padding: '0.2rem',
+            borderRadius: '99px',
+            border: '1px solid var(--border)'
+          }}>
+            <button
+              onClick={() => setActiveTab('operations')}
+              style={{
+                background: activeTab === 'operations' ? 'var(--nav-link-active-bg)' : 'transparent',
+                color: activeTab === 'operations' ? 'var(--nav-link-active-color)' : 'var(--muted)',
+                border: 'none',
+                padding: '0.4rem 1rem',
+                borderRadius: '99px',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                transition: 'all 0.2s',
+                cursor: 'pointer'
+              }}
+            >
+              Operations Console
+            </button>
+            <button
+              onClick={() => setActiveTab('summary')}
+              style={{
+                background: activeTab === 'summary' ? 'var(--nav-link-active-bg)' : 'transparent',
+                color: activeTab === 'summary' ? 'var(--nav-link-active-color)' : 'var(--muted)',
+                border: 'none',
+                padding: '0.4rem 1rem',
+                borderRadius: '99px',
+                fontSize: '0.75rem',
+                fontWeight: 700,
+                transition: 'all 0.2s',
+                cursor: 'pointer'
+              }}
+            >
+              Summary Analytics
+            </button>
+          </div>
+
           <button 
             onClick={fetchIssuesAndEscalate}
             className="btn btn-secondary"
@@ -619,18 +727,18 @@ ${selectedIssue.description}`;
       {/* Identical KPI Metrics Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '0.85rem' }}>
         {[
-          { label: 'OPEN CASES', val: openCases, trend: '+4%', graph: 'M0,18 L10,15 L20,17 L30,5 L40,12 L50,6 L60,8', color: '#eab308' },
-          { label: 'RESOLVED TODAY', val: resolvedCount, trend: '+12%', graph: 'M0,15 L10,18 L20,12 L30,14 L40,5 L50,8 L60,2', color: '#10b981' },
-          { label: 'CRITICAL SLA', val: escalatedCount, trend: '-2%', graph: 'M0,5 L10,9 L20,6 L30,15 L40,12 L50,18 L60,16', color: '#ef4444' },
+          { label: 'OPEN CASES', val: openCases, trend: '+4%', graph: 'M0,18 L10,15 L20,17 L30,5 L40,12 L50,6 L60,8', color: 'var(--warning)' },
+          { label: 'RESOLVED TODAY', val: resolvedCount, trend: '+12%', graph: 'M0,15 L10,18 L20,12 L30,14 L40,5 L50,8 L60,2', color: 'var(--accent)' },
+          { label: 'CRITICAL SLA', val: escalatedCount, trend: '-2%', graph: 'M0,5 L10,9 L20,6 L30,15 L40,12 L50,18 L60,16', color: 'var(--destructive)' },
           { label: 'DEPTS ACTIVE', val: activeDepts, trend: 'Stable', graph: 'M0,12 L10,12 L20,12 L30,12 L40,12 L50,12 L60,12', color: '#3b82f6' },
-          { label: 'BUDGET TODAY', val: `₹${totalCost.toLocaleString()}`, trend: '+8%', graph: 'M0,18 L10,12 L20,10 L30,8 L40,6 L50,4 L60,2', color: 'hsl(var(--primary))' },
+          { label: 'BUDGET TODAY', val: `₹${totalCost.toLocaleString()}`, trend: '+8%', graph: 'M0,18 L10,12 L20,10 L30,8 L40,6 L50,4 L60,2', color: 'var(--primary)' },
           { label: 'AVG RESOLUTION', val: `${avgSlaHours} hrs`, trend: '-15%', graph: 'M0,5 L10,10 L20,8 L30,12 L40,15 L50,18 L60,20', color: '#a855f7' },
-          { label: 'AI CONFIDENCE', val: `${avgConfidence}%`, trend: '+0.5%', graph: 'M0,16 L10,15 L20,14 L30,12 L40,10 L50,8 L60,5', color: 'hsl(var(--primary))' }
+          { label: 'AI CONFIDENCE', val: `${avgConfidence}%`, trend: '+0.5%', graph: 'M0,16 L10,15 L20,14 L30,12 L40,10 L50,8 L60,5', color: 'var(--primary)' }
         ].map((kpi, idx) => (
           <div key={idx} style={{ 
-            background: 'rgba(12, 12, 12, 0.72)', 
+            background: 'rgb(var(--card-rgb) / 0.72)', 
             backdropFilter: 'blur(12px)', 
-            border: '1px solid rgba(255,255,255,0.06)', 
+            border: '1px solid var(--surface-hover)', 
             padding: '0.85rem 1rem', 
             borderRadius: '16px',
             display: 'flex',
@@ -639,8 +747,8 @@ ${selectedIssue.description}`;
             height: '100px'
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.62rem', color: '#737373', fontWeight: 800, letterSpacing: '0.05em' }}>{kpi.label}</span>
-              <span style={{ fontSize: '0.62rem', color: kpi.trend.includes('-') ? '#ef4444' : '#10b981', fontWeight: 700 }}>{kpi.trend}</span>
+              <span style={{ fontSize: '0.62rem', color: 'var(--muted)', fontWeight: 800, letterSpacing: '0.05em' }}>{kpi.label}</span>
+              <span style={{ fontSize: '0.62rem', color: kpi.trend.includes('-') ? 'var(--destructive)' : 'var(--accent)', fontWeight: 700 }}>{kpi.trend}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '0.5rem' }}>
               <span style={{ fontSize: '1.25rem', fontWeight: 800, color: 'white', fontFamily: 'Outfit' }}>{kpi.val}</span>
@@ -657,14 +765,14 @@ ${selectedIssue.description}`;
         display: 'flex', 
         gap: '0.75rem', 
         alignItems: 'center', 
-        background: 'rgba(12, 12, 12, 0.45)', 
+        background: 'rgb(var(--card-rgb) / 0.45)', 
         padding: '0.75rem 1rem', 
         borderRadius: '16px', 
-        border: '1px solid rgba(255,255,255,0.04)',
+        border: '1px solid var(--surface-hover)',
         flexWrap: 'wrap'
       }}>
         <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
-          <Search size={14} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: '#737373' }} />
+          <Search size={14} style={{ position: 'absolute', left: '0.85rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--muted)' }} />
           <input 
             type="text" 
             className="input-field" 
@@ -738,128 +846,126 @@ ${selectedIssue.description}`;
         </div>
       </div>
 
-      {/* CORE THREE-PANEL LAYOUT */}
-      <div style={{ 
-        display: 'grid', 
-        gridTemplateColumns: '25% 45% 30%', 
-        gap: '1.25rem',
-        flex: 1,
-        minHeight: '520px'
-      }}>
-        
-        {/* LEFT PANEL (25%): Incident Queue */}
+      {activeTab === 'operations' ? (
         <div style={{ 
-          background: 'rgba(12, 12, 12, 0.45)', 
-          border: '1px solid rgba(255,255,255,0.05)', 
-          borderRadius: '20px', 
-          display: 'flex', 
-          flexDirection: 'column',
-          maxHeight: '680px',
-          overflow: 'hidden'
-        }}>
-          <div style={{ padding: '1rem', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.76rem', fontWeight: 800, color: 'white', letterSpacing: '0.05em' }}>AI INCIDENT QUEUE ({filteredList.length})</span>
-            <SlidersHorizontal size={14} color="#737373" />
-          </div>
-
-          <div style={{ overflowY: 'auto', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1 }}>
-            {filteredList.map(issue => {
-              const isSelected = selectedIssue?.id === issue.id;
-              const priorityCol = issue.priority_score >= 70 ? '#ef4444' : issue.priority_score >= 40 ? '#eab308' : '#10b981';
-              return (
-                <div 
-                  key={issue.id}
-                  onClick={() => {
-                    setSelectedIssue(issue);
-                    setAssignedOfficer(issue.assigned_officer || '');
-                    setRepairCost(issue.estimated_cost ? String(parseCost(issue.estimated_cost)) : '');
-                    setRepairNotes(issue.resolution_feedback || '');
-                    setAfterImagePreview(null);
-                    setVerificationFeedback(null);
-                    setVerificationError(null);
-                  }}
-                  style={{
-                    background: isSelected ? 'rgba(255, 255, 255, 0.04)' : 'rgba(18, 18, 18, 0.6)',
-                    border: isSelected ? '1px solid hsl(var(--primary))' : '1px solid rgba(255,255,255,0.04)',
-                    padding: '0.85rem',
-                    borderRadius: '14px',
-                    cursor: 'pointer',
-                    transition: 'all 0.2s ease',
-                    boxShadow: isSelected ? '0 0 12px rgba(16, 185, 129, 0.15)' : 'none'
-                  }}
-                  className="queue-card"
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.35rem' }}>
-                    <span className="badge" style={{ background: `${priorityCol}15`, color: priorityCol, fontSize: '0.62rem', fontWeight: 800 }}>
-                      Priority {issue.priority_score || 25}
-                    </span>
-                    <span style={{ fontSize: '0.65rem', color: '#737373' }}>
-                      {getSlaRemainingHours(issue.sla_due_at, issue.status) <= 0 ? 'Overdue' : `${getSlaRemainingHours(issue.sla_due_at, issue.status)}h left`}
-                    </span>
-                  </div>
-
-                  <h4 style={{ fontSize: '0.8rem', fontWeight: 700, color: 'white', marginBottom: '0.4rem', lineHeight: 1.3 }}>{issue.title}</h4>
-                  
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.68rem', color: '#a3a3a3' }}>
-                    <span>{issue.category}</span>
-                    <span style={{ color: 'hsl(var(--primary))', fontWeight: 700 }}>AI Conf: {Math.round((issue.confidence || 0.8) * 100)}%</span>
-                  </div>
-
-                  {issue.estimated_cost && (
-                    <div style={{ marginTop: '0.35rem', fontSize: '0.65rem', color: '#737373', display: 'flex', justifyContent: 'space-between' }}>
-                      <span>Est Budget:</span>
-                      <span style={{ fontWeight: 700, color: '#f4f4f5' }}>₹{parseCost(issue.estimated_cost).toLocaleString()}</span>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {filteredList.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '2rem', color: '#737373', fontSize: '0.78rem' }}>No queue tickets found.</div>
-            )}
-          </div>
-        </div>
-
-        {/* CENTER PANEL (45%): Operations Table & Feed */}
-        <div style={{ 
-          display: 'flex', 
-          flexDirection: 'column', 
+          display: 'grid', 
+          gridTemplateColumns: '25% 45% 30%', 
           gap: '1.25rem',
-          maxHeight: '680px'
+          flex: 1,
+          minHeight: '520px'
         }}>
           
-          {/* Main Grid Table */}
+          {/* LEFT PANEL (25%): Incident Queue */}
           <div style={{ 
-            background: 'rgba(12, 12, 12, 0.45)', 
-            border: '1px solid rgba(255,255,255,0.05)', 
+            background: 'var(--card)', 
+            border: '1px solid var(--border)', 
             borderRadius: '20px', 
-            flex: 1,
-            display: 'flex',
+            display: 'flex', 
             flexDirection: 'column',
+            maxHeight: '680px',
             overflow: 'hidden'
           }}>
-            <div style={{ padding: '1rem', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.76rem', fontWeight: 800, color: 'white', letterSpacing: '0.05em' }}>MUNICIPAL OPERATIONS TRACKER</span>
-              <span style={{ fontSize: '0.68rem', color: '#737373' }}>Showing {filteredList.length} of {issues.length} total entries</span>
+            <div style={{ padding: '1rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--foreground)', letterSpacing: '0.05em' }}>AI INCIDENT QUEUE ({filteredList.length})</span>
+              <SlidersHorizontal size={14} color="var(--muted)" />
             </div>
 
-            <div style={{ overflowY: 'auto', flex: 1 }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.78rem' }}>
+            <div style={{ overflowY: 'auto', padding: '0.75rem', display: 'flex', flexDirection: 'column', gap: '0.75rem', flex: 1 }}>
+              {filteredList.map((issue) => {
+                const isSelected = selectedIssue?.id === issue.id;
+                return (
+                  <div 
+                    key={issue.id}
+                    onClick={() => {
+                      setSelectedIssue(issue);
+                      setAssignedOfficer(issue.assigned_officer || '');
+                      setRepairCost(issue.estimated_cost ? String(parseCost(issue.estimated_cost)) : '');
+                      setRepairNotes(issue.resolution_feedback || '');
+                      setAfterImagePreview(null);
+                      setVerificationFeedback(null);
+                      setVerificationError(null);
+                      setAiPlan(null);
+                    }}
+                    style={{
+                      background: isSelected ? 'var(--accent-tint)' : 'var(--background-secondary)',
+                      border: isSelected ? '1px solid var(--accent)' : '1px solid var(--border)',
+                      padding: '0.85rem',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.45rem'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <span className={`badge ${issue.status === 'resolved' ? 'badge-resolved' : issue.status === 'in_progress' ? 'badge-in_progress' : 'badge-pending'}`} style={{ fontSize: '0.58rem' }}>
+                        {issue.status}
+                      </span>
+                      <span style={{ fontSize: '0.58rem', color: 'var(--muted)', fontWeight: 600 }}>
+                        {new Date(issue.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+
+                    <h4 style={{ fontSize: '0.82rem', fontWeight: 700, margin: 0, color: 'var(--foreground)' }}>
+                      {issue.title}
+                    </h4>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', color: 'var(--muted)' }}>
+                      <span>Category: {issue.category}</span>
+                      <span style={{ fontWeight: 700, color: 'var(--foreground)' }}>Priority: {issue.priority_score || 0}</span>
+                    </div>
+
+                    {issue.estimated_cost && (
+                      <div style={{ marginTop: '0.35rem', fontSize: '0.65rem', color: 'var(--muted)', display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Est Budget:</span>
+                        <span style={{ fontWeight: 700, color: 'var(--foreground)' }}>₹{parseCost(issue.estimated_cost).toLocaleString()}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+              {filteredList.length === 0 && (
+                <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: '0.78rem', padding: '2rem 1rem' }}>
+                  No issues match the active filter criteria.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* CENTER PANEL (45%): Operations Table */}
+          <div style={{ 
+            background: 'var(--card)', 
+            border: '1px solid var(--border)', 
+            borderRadius: '20px', 
+            display: 'flex', 
+            flexDirection: 'column',
+            maxHeight: '680px',
+            overflow: 'hidden'
+          }}>
+            <div style={{ padding: '1rem', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.76rem', fontWeight: 800, color: 'var(--foreground)', letterSpacing: '0.05em' }}>MUNICIPAL TRACKER</span>
+              <span className="badge badge-resolved" style={{ fontSize: '0.6rem' }}>
+                {issues.filter(i => i.status === 'resolved').length} RESOLVED
+              </span>
+            </div>
+
+            <div style={{ overflow: 'auto', flex: 1 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.76rem', textAlign: 'left' }}>
                 <thead>
-                  <tr style={{ background: 'rgba(255,255,255,0.01)', borderBottom: '1px solid rgba(255,255,255,0.06)', color: '#737373', fontSize: '0.65rem', fontWeight: 800 }}>
-                    <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>CASE ID</th>
-                    <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>CATEGORY</th>
-                    <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>PRIORITY</th>
-                    <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>DEPT</th>
-                    <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>OFFICER</th>
-                    <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>BUDGET</th>
-                    <th style={{ padding: '0.75rem 1rem', textAlign: 'left' }}>STATUS</th>
+                  <tr style={{ background: 'var(--background-secondary)', borderBottom: '1px solid var(--border)' }}>
+                    <th style={{ padding: '0.75rem 1rem', color: 'var(--muted)', fontWeight: 700 }}>CASE ID</th>
+                    <th style={{ padding: '0.75rem 1rem', color: 'var(--muted)', fontWeight: 700 }}>LANDMARK</th>
+                    <th style={{ padding: '0.75rem 1rem', color: 'var(--muted)', fontWeight: 700 }}>DEPT</th>
+                    <th style={{ padding: '0.75rem 1rem', color: 'var(--muted)', fontWeight: 700 }}>OFFICER</th>
+                    <th style={{ padding: '0.75rem 1rem', color: 'var(--muted)', fontWeight: 700 }}>ESTIMATED (₹)</th>
+                    <th style={{ padding: '0.75rem 1rem', color: 'var(--muted)', fontWeight: 700 }}>STATUS</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredList.map(issue => {
+                  {filteredList.map((issue) => {
                     const isSelected = selectedIssue?.id === issue.id;
-                    const priorityCol = issue.priority_score >= 70 ? '#ef4444' : issue.priority_score >= 40 ? '#eab308' : '#10b981';
                     return (
                       <tr 
                         key={issue.id}
@@ -871,340 +977,426 @@ ${selectedIssue.description}`;
                           setAfterImagePreview(null);
                           setVerificationFeedback(null);
                           setVerificationError(null);
+                          setAiPlan(null);
                         }}
                         style={{
-                          borderBottom: '1px solid rgba(255,255,255,0.02)',
-                          background: isSelected ? 'rgba(255,255,255,0.02)' : 'transparent',
+                          borderBottom: '1px solid var(--border)',
                           cursor: 'pointer',
-                          transition: 'background 0.2s ease'
+                          background: isSelected ? 'var(--accent-tint)' : 'transparent',
+                          transition: 'background 0.15s'
                         }}
-                        className="hover-row"
                       >
-                        <td style={{ padding: '0.75rem 1rem', fontFamily: 'monospace', color: '#a3a3a3' }}>#{issue.id.substring(0, 8)}</td>
-                        <td style={{ padding: '0.75rem 1rem', fontWeight: 700, color: 'white' }}>{issue.category}</td>
-                        <td style={{ padding: '0.75rem 1rem' }}>
-                          <span style={{ color: priorityCol, fontWeight: 700 }}>{issue.priority_score || 25}</span>
-                        </td>
-                        <td style={{ padding: '0.75rem 1rem', color: 'hsl(var(--primary))' }}>{issue.department?.replace('Department', '').replace('Board', '') || 'General'}</td>
-                        <td style={{ padding: '0.75rem 1rem', color: '#a3a3a3' }}>{issue.assigned_officer || 'Unassigned'}</td>
+                        <td style={{ padding: '0.75rem 1rem', fontWeight: 800, color: 'var(--foreground)' }}>#{issue.id?.substring(0, 8)}</td>
+                        <td style={{ padding: '0.75rem 1rem', color: 'var(--foreground-secondary)' }}>{issue.title}</td>
+                        <td style={{ padding: '0.75rem 1rem', color: 'var(--accent)' }}>{issue.department?.replace('Department', '').replace('Board', '') || 'General'}</td>
+                        <td style={{ padding: '0.75rem 1rem', color: 'var(--foreground-secondary)' }}>{issue.assigned_officer || 'Unassigned'}</td>
                         <td style={{ padding: '0.75rem 1rem', fontWeight: 700 }}>₹{parseCost(issue.estimated_cost).toLocaleString()}</td>
                         <td style={{ padding: '0.75rem 1rem' }}>
-                          <span className={`badge badge-${issue.status}`} style={{ fontSize: '0.62rem' }}>{issue.status}</span>
+                          <span className={`badge ${issue.status === 'resolved' ? 'badge-resolved' : issue.status === 'in_progress' ? 'badge-in_progress' : 'badge-pending'}`} style={{ fontSize: '0.62rem' }}>{issue.status}</span>
                         </td>
                       </tr>
                     );
                   })}
+
+                  {filteredList.length === 0 && (
+                    <tr>
+                      <td colSpan={6} style={{ padding: '2rem', textAlign: 'center', color: 'var(--muted)' }}>
+                        No dispatch files catalogued.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
             </div>
           </div>
 
-          {/* Bottom Feed: Live Activity Logs */}
+          {/* RIGHT PANEL (30%): Incident Inspector */}
           <div style={{ 
-            background: 'rgba(12, 12, 12, 0.72)', 
-            border: '1px solid rgba(255,255,255,0.05)', 
+            background: 'var(--card)', 
+            border: '1px solid var(--border)', 
             borderRadius: '20px', 
-            padding: '1rem',
-            height: '140px',
-            display: 'flex',
+            padding: '1.25rem',
+            display: 'flex', 
             flexDirection: 'column',
-            overflow: 'hidden'
+            gap: '1rem',
+            maxHeight: '680px',
+            overflowY: 'auto'
           }}>
-            <span style={{ fontSize: '0.68rem', fontWeight: 800, color: '#737373', letterSpacing: '0.05em', marginBottom: '0.5rem', display: 'block' }}>LIVE DISPATCH ACTIVITY LOGS</span>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', overflowY: 'auto', flex: 1 }}>
-              {activityLogs.map((log) => (
-                <div key={log.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', color: '#a3a3a3', borderBottom: '1px solid rgba(255,255,255,0.01)', paddingBottom: '0.25rem' }}>
-                  <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
-                    <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: log.type === 'warning' ? '#ef4444' : log.type === 'success' ? '#10b981' : 'hsl(var(--primary))' }} />
-                    <span>{log.text}</span>
-                  </div>
-                  <span style={{ fontSize: '0.65rem', color: '#737373' }}>{log.time}</span>
+            {selectedIssue ? (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)', paddingBottom: '0.75rem' }}>
+                  <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'var(--foreground)' }}>INCIDENT OVERVIEW</span>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--muted)', fontWeight: 600 }}>#{selectedIssue.id?.substring(0, 8)}</span>
                 </div>
-              ))}
-            </div>
+
+                {/* Imagery Row */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.50rem' }}>
+                  <div>
+                    <span style={{ display: 'block', fontSize: '0.62rem', color: 'var(--muted)', fontWeight: 700, marginBottom: '0.25rem' }}>BEFORE FIX</span>
+                    <img src={selectedIssue.image_url} alt="Before" style={{ width: '100%', height: '90px', objectFit: 'cover', borderRadius: '8px', border: '1px solid var(--border)' }} />
+                  </div>
+                  <div>
+                    <span style={{ display: 'block', fontSize: '0.62rem', color: 'var(--accent)', fontWeight: 700, marginBottom: '0.25rem' }}>AFTER FIX</span>
+                    {selectedIssue.after_image_url ? (
+                      <img src={selectedIssue.after_image_url} alt="After" style={{ width: '100%', height: '90px', objectFit: 'cover', borderRadius: '8px', border: '1px solid var(--accent)' }} />
+                    ) : afterImagePreview ? (
+                      <div style={{ position: 'relative' }}>
+                        <img src={afterImagePreview} alt="After Preview" style={{ width: '100%', height: '90px', objectFit: 'cover', borderRadius: '8px' }} />
+                        <button
+                          onClick={handleRemoveAfterImage}
+                          title="Remove this photo"
+                          style={{
+                            position: 'absolute',
+                            top: '4px',
+                            right: '4px',
+                            width: '20px',
+                            height: '20px',
+                            borderRadius: '50%',
+                            background: 'rgb(var(--destructive-rgb) / 0.9)',
+                            border: 'none',
+                            color: 'white',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            padding: 0,
+                            fontSize: '0.6rem',
+                            fontWeight: 800
+                          }}
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div 
+                        onClick={() => document.getElementById('after-fix-upload')?.click()}
+                        style={{ height: '90px', border: '2px dashed var(--border-strong)', borderRadius: '8px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', gap: '0.2rem', background: 'var(--card-2)' }}
+                      >
+                        <Camera size={14} color="var(--muted)" />
+                        <span style={{ fontSize: '0.6rem', color: 'var(--muted)' }}>Upload Fix</span>
+                      </div>
+                    )}
+                    <input id="after-fix-upload" type="file" accept="image/*" onChange={handleAfterImageChange} style={{ display: 'none' }} />
+                  </div>
+                </div>
+
+                {/* Compare AI proof */}
+                {afterImagePreview && !selectedIssue.after_image_url && (
+                  <button 
+                    onClick={handleVerifyResolution}
+                    className="btn btn-primary"
+                    disabled={verifying}
+                    style={{ width: '100%', padding: '0.45rem', fontSize: '0.74rem' }}
+                  >
+                    {verifying ? <Loader2 size={12} className="spin" /> : 'Compare proof with AI'}
+                  </button>
+                )}
+
+                {/* Verification result details */}
+                {verificationError && (
+                  <div style={{ background: 'rgb(var(--destructive-rgb) / 0.08)', border: '1px solid rgb(var(--destructive-rgb) / 0.15)', color: 'var(--destructive)', padding: '0.5rem', borderRadius: '8px', fontSize: '0.70rem' }}>
+                    {verificationError}
+                  </div>
+                )}
+                {verificationFeedback && (
+                  <div style={{ background: 'var(--accent-tint)', border: '1px solid var(--accent)', color: 'var(--accent)', padding: '0.5rem', borderRadius: '8px', fontSize: '0.70rem' }}>
+                    <strong>AI Verification Agent verdict:</strong> {verificationFeedback}
+                  </div>
+                )}
+
+                {/* Details list */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', fontSize: '0.72rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '0.35rem' }}>
+                    <span style={{ color: 'var(--muted)' }}>Title:</span>
+                    <strong style={{ color: 'var(--foreground)' }}>{selectedIssue.title}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '0.35rem' }}>
+                    <span style={{ color: 'var(--muted)' }}>Department:</span>
+                    <strong style={{ color: 'var(--foreground)' }}>{selectedIssue.department}</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '0.35rem' }}>
+                    <span style={{ color: 'var(--muted)' }}>Risk Rating:</span>
+                    <strong style={{ color: selectedIssue.severity === 'High' || selectedIssue.severity === 'Critical' ? 'var(--destructive)' : 'var(--warning)' }}>
+                      {selectedIssue.severity || 'Medium'}
+                    </strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '0.35rem' }}>
+                    <span style={{ color: 'var(--muted)' }}>AI Score:</span>
+                    <strong style={{ color: 'var(--foreground)' }}>{selectedIssue.priority_score || 0} / 100</strong>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid var(--border)', paddingBottom: '0.35rem', flexWrap: 'wrap', gap: '0.2rem' }}>
+                    <span className="badge" style={{ background: 'var(--surface-hover)', color: 'var(--muted)', fontSize: '0.58rem' }}>
+                      Confidence: {Math.round((selectedIssue.confidence || 0.85) * 100)}%
+                    </span>
+                    <span className="badge" style={{ background: 'var(--surface-hover)', color: 'var(--muted)', fontSize: '0.58rem' }}>
+                      SLA Duty: {selectedIssue.sla_hours || 72} hrs
+                    </span>
+                  </div>
+                </div>
+
+                {/* Citizen description */}
+                <div style={{ fontSize: '0.74rem' }}>
+                  <span style={{ display: 'block', fontSize: '0.62rem', color: 'var(--muted)', fontWeight: 700, marginBottom: '0.25rem' }}>CITIZEN DISPATCH MESSAGE</span>
+                  <p style={{ color: 'var(--foreground-secondary)', lineHeight: 1.4, margin: 0 }}>{selectedIssue.description}</p>
+                  <span style={{ display: 'block', fontSize: '0.65rem', color: 'var(--muted)', marginTop: '0.25rem' }}>
+                    Reported by: {selectedIssue.reporter_name || 'Anonymous Citizen'}
+                  </span>
+                </div>
+
+                {/* AI Dispatch Copilot */}
+                <div style={{ 
+                  background: 'var(--accent-tint)', 
+                  border: '1px solid var(--accent)', 
+                  padding: '0.85rem', 
+                  borderRadius: '12px', 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  gap: '0.5rem' 
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                      <Sparkles size={13} /> AI DISPATCH COPILOT
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleGeneratePlan}
+                      disabled={generatingPlan}
+                      className="btn btn-sm btn-primary"
+                      style={{ fontSize: '0.65rem', padding: '0.2rem 0.5rem', display: 'flex', alignItems: 'center', gap: '0.2rem' }}
+                    >
+                      {generatingPlan ? <Loader2 size={10} className="spin" /> : 'Generate Action Plan'}
+                    </button>
+                  </div>
+                  {aiPlan ? (
+                    <div style={{ fontSize: '0.68rem', color: 'var(--foreground)', display: 'flex', flexDirection: 'column', gap: '0.3rem', borderTop: '1px solid rgb(var(--accent-rgb) / 0.2)', paddingTop: '0.4rem' }}>
+                      <div><strong style={{ color: 'var(--accent)' }}>Recommended Officer:</strong> {aiPlan.suggested_officer}</div>
+                      <div><strong style={{ color: 'var(--accent)' }}>Suggested Budget:</strong> ₹{aiPlan.suggested_cost?.toLocaleString()}</div>
+                      <div><strong style={{ color: 'var(--accent)' }}>Materials:</strong> {aiPlan.materials?.join(', ')}</div>
+                      <div style={{ fontStyle: 'italic', color: 'var(--muted)', marginTop: '0.1rem' }}>"{aiPlan.dispatch_memo}"</div>
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: '0.62rem', color: 'var(--muted)' }}>
+                      Analyze complaint description with AI to autofill officer, materials, budget & notes.
+                    </span>
+                  )}
+                </div>
+
+                {/* Form dispatch work order */}
+                <form onSubmit={handleAssignOfficerAndCost} style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', background: 'var(--card-2)', border: '1px solid var(--border)', padding: '0.85rem', borderRadius: '12px' }}>
+                  <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--foreground)', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)', paddingBottom: '0.25rem', display: 'block' }}>
+                    DISPATCH WORK ORDER
+                  </span>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                    <div>
+                      <label htmlFor="inspector-officer" style={{ display: 'block', fontSize: '0.62rem', color: 'var(--muted)', marginBottom: '0.15rem' }}>OFFICER</label>
+                      <input 
+                        id="inspector-officer"
+                        type="text" 
+                        className="input-field" 
+                        placeholder="Engineer name"
+                        value={assignedOfficer}
+                        onChange={(e) => setAssignedOfficer(e.target.value)}
+                        style={{ fontSize: '0.7rem', padding: '0.35rem' }}
+                      />
+                    </div>
+
+                    <div>
+                      <label htmlFor="inspector-cost" style={{ display: 'block', fontSize: '0.62rem', color: 'var(--muted)', marginBottom: '0.15rem' }}>EST REPAIR (₹)</label>
+                      <input 
+                        id="inspector-cost"
+                        type="number" 
+                        className="input-field" 
+                        placeholder="Cost"
+                        value={repairCost}
+                        onChange={(e) => setRepairCost(e.target.value)}
+                        style={{ fontSize: '0.7rem', padding: '0.35rem' }}
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="inspector-notes" style={{ display: 'block', fontSize: '0.62rem', color: 'var(--muted)', marginBottom: '0.15rem' }}>REPAIR WORK NOTES</label>
+                    <textarea 
+                      id="inspector-notes"
+                      className="input-field" 
+                      placeholder="Describe repair milestones..."
+                      rows={2}
+                      value={repairNotes}
+                      onChange={(e) => setRepairNotes(e.target.value)}
+                      style={{ fontSize: '0.7rem', padding: '0.35rem', resize: 'none' }}
+                    />
+                  </div>
+
+                  <button 
+                    type="submit" 
+                    className="btn btn-secondary" 
+                    style={{ padding: '0.45rem', fontSize: '0.74rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem', width: '100%' }}
+                  >
+                    <Wrench size={12} /> Dispatch & Update Order
+                  </button>
+                </form>
+
+                {/* Quick Actions Panel */}
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <button 
+                    onClick={() => handleStatusChange(selectedIssue.id, 'in_progress')}
+                    className="btn btn-secondary"
+                    style={{ flex: 1, padding: '0.45rem', fontSize: '0.72rem' }}
+                    disabled={selectedIssue.status === 'resolved'}
+                  >
+                    In Progress
+                  </button>
+                  {selectedIssue.resolution_verified ? (
+                    <button 
+                      className="btn btn-primary"
+                      style={{ flex: 1, padding: '0.45rem', fontSize: '0.72rem', opacity: 1 }}
+                      disabled
+                    >
+                      ✓ Verified & Resolved
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={() => {
+                        if (!selectedIssue.after_image_url && !afterImagePreview) {
+                          alert('You must upload an after-fix photo and pass AI verification before resolving.');
+                          return;
+                        }
+                        if (!selectedIssue.resolution_verified && !verificationFeedback) {
+                          alert('AI verification is mandatory. Click "Compare proof with AI" first.');
+                          return;
+                        }
+                        handleStatusChange(selectedIssue.id, 'resolved');
+                      }}
+                      className="btn btn-primary"
+                      style={{ flex: 1, padding: '0.45rem', fontSize: '0.72rem' }}
+                    >
+                      Resolve
+                    </button>
+                  )}
+                  <button 
+                    onClick={handleDownloadReport}
+                    className="btn btn-secondary"
+                    style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '38px', padding: 0 }}
+                    title="Download Grievance Report"
+                  >
+                    <FileText size={14} />
+                  </button>
+                </div>
+                {!selectedIssue.resolution_verified && selectedIssue.status !== 'resolved' && (
+                  <div style={{ fontSize: '0.62rem', color: 'var(--warning)', background: 'rgb(var(--warning-rgb) / 0.06)', border: '1px solid rgb(var(--warning-rgb) / 0.1)', padding: '0.4rem 0.6rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <AlertTriangle size={11} /> Resolution requires uploading an after-fix photo and passing AI verification.
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ textAlign: 'center', color: 'var(--muted)', fontSize: '0.78rem', marginTop: '4rem' }}>
+                Select an incident from the operations tracker to load the inspector panel.
+              </div>
+            )}
           </div>
 
         </div>
-
-        {/* RIGHT PANEL (30%): Incident Inspector Panel */}
-        <div style={{ 
-          background: 'rgba(12, 12, 12, 0.72)', 
-          backdropFilter: 'blur(24px)',
-          border: '1px solid rgba(255, 255, 255, 0.06)', 
-          borderRadius: '20px', 
-          padding: '1.25rem',
-          display: 'flex', 
-          flexDirection: 'column',
-          gap: '1rem',
-          maxHeight: '680px',
-          overflowY: 'auto'
+      ) : (
+        /* ANALYTICS SUMMARY TAB */
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+          gap: '1.5rem',
+          flex: 1
         }}>
-          {selectedIssue ? (
-            <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.5rem' }}>
-                <span style={{ fontSize: '0.72rem', fontWeight: 800, color: 'hsl(var(--primary))', letterSpacing: '0.05em' }}>COMPLAINT AUDITOR</span>
-                <span style={{ fontFamily: 'monospace', fontSize: '0.72rem', color: '#737373' }}>#{selectedIssue.id.substring(0, 8)}</span>
-              </div>
-
-              {/* Before/After Visual proof comparator */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                <div>
-                  <span style={{ display: 'block', fontSize: '0.62rem', color: '#737373', fontWeight: 700, marginBottom: '0.25rem' }}>BEFORE FILE</span>
-                  {selectedIssue.image_url ? (
-                    <img src={selectedIssue.image_url} alt="Before" style={{ width: '100%', height: '90px', objectFit: 'cover', borderRadius: '8px' }} />
-                  ) : (
-                    <div style={{ height: '90px', background: 'rgba(255,255,255,0.01)', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem' }}>No Image</div>
-                  )}
-                </div>
-
-                <div>
-                  <span style={{ display: 'block', fontSize: '0.62rem', color: 'hsl(var(--accent))', fontWeight: 700, marginBottom: '0.25rem' }}>AFTER FIX</span>
-                  {selectedIssue.after_image_url ? (
-                    <img src={selectedIssue.after_image_url} alt="After" style={{ width: '100%', height: '90px', objectFit: 'cover', borderRadius: '8px', border: '1px solid hsl(var(--accent))' }} />
-                  ) : afterImagePreview ? (
-                    <div style={{ position: 'relative' }}>
-                      <img src={afterImagePreview} alt="After Preview" style={{ width: '100%', height: '90px', objectFit: 'cover', borderRadius: '8px' }} />
-                      <button
-                        onClick={handleRemoveAfterImage}
-                        title="Remove this photo"
-                        style={{
-                          position: 'absolute',
-                          top: '4px',
-                          right: '4px',
-                          width: '20px',
-                          height: '20px',
-                          borderRadius: '50%',
-                          background: 'rgba(239, 68, 68, 0.9)',
-                          border: 'none',
-                          color: 'white',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          padding: 0,
-                          fontSize: '0.6rem',
-                          fontWeight: 800
-                        }}
-                      >
-                        <X size={12} />
-                      </button>
+          {/* Category Breakdown (Card) */}
+          <div className="card" style={{ padding: '1.5rem', background: 'var(--card)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <h3 style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--foreground)' }}>INCIDENT VOLUMES BY CATEGORY</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', flex: 1, justifyContent: 'center' }}>
+              {sortedCategories.map(([cat, count]: any) => {
+                const pct = Math.round((count / issues.length) * 100);
+                return (
+                  <div key={cat} style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', fontWeight: 600 }}>
+                      <span style={{ color: 'var(--foreground-secondary)' }}>{cat}</span>
+                      <span style={{ color: 'var(--muted)' }}>{count} ({pct}%)</span>
                     </div>
-                  ) : (
-                    <div 
-                      onClick={() => document.getElementById('after-fix-upload')?.click()}
-                      style={{ height: '90px', border: '2px dashed rgba(255,255,255,0.08)', borderRadius: '8px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', gap: '0.2rem' }}
-                    >
-                      <Camera size={14} color="#737373" />
-                      <span style={{ fontSize: '0.6rem', color: '#737373' }}>Upload Fix</span>
+                    <div style={{ height: '6px', background: 'var(--background-secondary)', borderRadius: '99px', overflow: 'hidden' }}>
+                      <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent)', borderRadius: '99px' }} />
                     </div>
-                  )}
-                  <input id="after-fix-upload" type="file" accept="image/*" onChange={handleAfterImageChange} style={{ display: 'none' }} />
-                </div>
-              </div>
-
-              {/* AI Verification execution alerts */}
-              {verificationFeedback && (
-                <div style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.15)', color: 'hsl(var(--accent))', padding: '0.5rem 0.75rem', borderRadius: '8px', fontSize: '0.72rem' }}>
-                  {verificationFeedback}
-                </div>
-              )}
-              {verificationError && (
-                <div style={{ background: 'rgba(239, 68, 68, 0.08)', border: '1px solid rgba(239, 68, 68, 0.15)', color: '#ef4444', padding: '0.5rem 0.75rem', borderRadius: '8px', fontSize: '0.72rem' }}>
-                  {verificationError}
-                </div>
-              )}
-
-              {/* AI verification triggers */}
-              {afterImagePreview && !selectedIssue.after_image_url && (
-                <button 
-                  onClick={handleVerifyResolution}
-                  disabled={verifying}
-                  className="btn btn-primary"
-                  style={{ width: '100%', padding: '0.45rem', fontSize: '0.74rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem' }}
-                >
-                  {verifying ? <Loader2 size={12} className="spin" /> : <Sparkles size={12} />} Compare proof with AI
-                </button>
-              )}
-
-              {/* Palantir Styled GIS Radar Canvas Map */}
-              <div>
-                <span style={{ display: 'block', fontSize: '0.62rem', color: '#737373', fontWeight: 700, marginBottom: '0.25rem' }}>TACTICAL COORDINATE RADAR</span>
-                <div style={{ 
-                  height: '110px', 
-                  background: 'radial-gradient(circle, rgba(16,185,129,0.04) 0%, rgba(7,7,7,0.9) 100%)', 
-                  border: '1px solid rgba(255,255,255,0.05)', 
-                  borderRadius: '12px',
-                  position: 'relative',
-                  overflow: 'hidden',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexDirection: 'column'
-                }}>
-                  <div style={{ 
-                    position: 'absolute', 
-                    width: '70px', 
-                    height: '70px', 
-                    border: '1px dashed rgba(16, 185, 129, 0.15)', 
-                    borderRadius: '50%',
-                    animation: 'spin 12s linear infinite' 
-                  }} />
-                  <MapPin size={22} color="hsl(var(--primary))" style={{ zIndex: 2, filter: 'drop-shadow(0 0 8px hsl(var(--primary)))' }} />
-                  <span style={{ fontSize: '0.68rem', fontFamily: 'monospace', color: 'white', marginTop: '0.5rem', zIndex: 2 }}>
-                    GPS: {selectedIssue.lat.toFixed(5)}, {selectedIssue.lng.toFixed(5)}
-                  </span>
-                  <a 
-                    href={`https://www.google.com/maps/search/?api=1&query=${selectedIssue.lat},${selectedIssue.lng}`}
-                    target="_blank" 
-                    rel="noreferrer"
-                    style={{ fontSize: '0.6rem', color: 'hsl(var(--primary))', marginTop: '0.2rem', textDecoration: 'underline', zIndex: 2 }}
-                  >
-                    Open in Full Google Maps
-                  </a>
-                </div>
-              </div>
-
-              {/* AI assessment info */}
-              <div style={{ background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '10px', fontSize: '0.72rem' }}>
-                <span style={{ display: 'block', fontSize: '0.62rem', color: '#737373', fontWeight: 700, marginBottom: '0.25rem' }}>AI ROUTING MEMO</span>
-                <p style={{ color: '#d1d5db', lineHeight: 1.4, margin: 0 }}>
-                  {selectedIssue.official_summary || 'No summary registered.'}
-                </p>
-                <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                  <span className="badge" style={{ background: 'rgba(255,255,255,0.03)', color: '#a3a3a3', fontSize: '0.58rem' }}>
-                    Confidence: {Math.round((selectedIssue.confidence || 0.85) * 100)}%
-                  </span>
-                  <span className="badge" style={{ background: 'rgba(255,255,255,0.03)', color: '#a3a3a3', fontSize: '0.58rem' }}>
-                    SLA Duty: {selectedIssue.sla_hours || 72} hrs
-                  </span>
-                </div>
-              </div>
-
-              {/* Citizen description */}
-              <div style={{ fontSize: '0.74rem' }}>
-                <span style={{ display: 'block', fontSize: '0.62rem', color: '#737373', fontWeight: 700, marginBottom: '0.25rem' }}>CITIZEN DISPATCH MESSAGE</span>
-                <p style={{ color: '#a3a3a3', lineHeight: 1.4, margin: 0 }}>{selectedIssue.description}</p>
-                <span style={{ display: 'block', fontSize: '0.65rem', color: '#737373', marginTop: '0.25rem' }}>
-                  Reported by: {selectedIssue.reporter_name || 'Anonymous Citizen'}
-                </span>
-              </div>
-
-              {/* Form dispatch work order */}
-              <form onSubmit={handleAssignOfficerAndCost} style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.03)', padding: '0.85rem', borderRadius: '12px' }}>
-                <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'white', letterSpacing: '0.05em', borderBottom: '1px solid rgba(255,255,255,0.04)', paddingBottom: '0.25rem', display: 'block' }}>
-                  DISPATCH WORK ORDER
-                </span>
-
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                  <div>
-                    <label htmlFor="inspector-officer" style={{ display: 'block', fontSize: '0.62rem', color: '#737373', marginBottom: '0.15rem' }}>OFFICER</label>
-                    <input 
-                      id="inspector-officer"
-                      type="text" 
-                      className="input-field" 
-                      placeholder="Engineer name"
-                      value={assignedOfficer}
-                      onChange={(e) => setAssignedOfficer(e.target.value)}
-                      style={{ fontSize: '0.7rem', padding: '0.35rem' }}
-                    />
                   </div>
-
-                  <div>
-                    <label htmlFor="inspector-cost" style={{ display: 'block', fontSize: '0.62rem', color: '#737373', marginBottom: '0.15rem' }}>EST REPAIR (₹)</label>
-                    <input 
-                      id="inspector-cost"
-                      type="number" 
-                      className="input-field" 
-                      placeholder="Cost"
-                      value={repairCost}
-                      onChange={(e) => setRepairCost(e.target.value)}
-                      style={{ fontSize: '0.7rem', padding: '0.35rem' }}
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label htmlFor="inspector-notes" style={{ display: 'block', fontSize: '0.62rem', color: '#737373', marginBottom: '0.15rem' }}>REPAIR WORK NOTES</label>
-                  <textarea 
-                    id="inspector-notes"
-                    className="input-field" 
-                    placeholder="Describe repair milestones..."
-                    rows={2}
-                    value={repairNotes}
-                    onChange={(e) => setRepairNotes(e.target.value)}
-                    style={{ fontSize: '0.7rem', padding: '0.35rem', resize: 'none' }}
-                  />
-                </div>
-
-                <button 
-                  type="submit" 
-                  className="btn btn-secondary" 
-                  style={{ padding: '0.45rem', fontSize: '0.74rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem', width: '100%' }}
-                >
-                  <Wrench size={12} /> Dispatch & Update Order
-                </button>
-              </form>
-
-              {/* Quick Actions Panel */}
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <button 
-                  onClick={() => handleStatusChange(selectedIssue.id, 'in_progress')}
-                  className="btn btn-secondary"
-                  style={{ flex: 1, padding: '0.45rem', fontSize: '0.72rem' }}
-                  disabled={selectedIssue.status === 'resolved'}
-                >
-                  In Progress
-                </button>
-                {selectedIssue.resolution_verified ? (
-                  <button 
-                    className="btn btn-primary"
-                    style={{ flex: 1, padding: '0.45rem', fontSize: '0.72rem', opacity: 1 }}
-                    disabled
-                  >
-                    ✓ Verified & Resolved
-                  </button>
-                ) : (
-                  <button 
-                    onClick={() => {
-                      if (!selectedIssue.after_image_url && !afterImagePreview) {
-                        alert('You must upload an after-fix photo and pass AI verification before resolving.');
-                        return;
-                      }
-                      if (!selectedIssue.resolution_verified && !verificationFeedback) {
-                        alert('AI verification is mandatory. Click "Compare proof with AI" first.');
-                        return;
-                      }
-                      handleStatusChange(selectedIssue.id, 'resolved');
-                    }}
-                    className="btn btn-primary"
-                    style={{ flex: 1, padding: '0.45rem', fontSize: '0.72rem' }}
-                  >
-                    Resolve
-                  </button>
-                )}
-                <button 
-                  onClick={handleDownloadReport}
-                  className="btn btn-secondary"
-                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '38px', padding: 0 }}
-                  title="Download Grievance Report"
-                >
-                  <FileText size={14} />
-                </button>
-              </div>
-              {!selectedIssue.resolution_verified && selectedIssue.status !== 'resolved' && (
-                <div style={{ fontSize: '0.62rem', color: '#eab308', background: 'rgba(234, 179, 8, 0.06)', border: '1px solid rgba(234, 179, 8, 0.1)', padding: '0.4rem 0.6rem', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                  <AlertTriangle size={11} /> Resolution requires uploading an after-fix photo and passing AI verification.
-                </div>
-              )}
-            </>
-          ) : (
-            <div style={{ textAlign: 'center', color: '#737373', fontSize: '0.78rem', marginTop: '4rem' }}>
-              Select an incident from the operations tracker to load the inspector panel.
+                );
+              })}
             </div>
-          )}
-        </div>
+          </div>
 
-      </div>
+          {/* Department Workloads (Card) */}
+          <div className="card" style={{ padding: '1.5rem', background: 'var(--card)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <h3 style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--foreground)' }}>DEPARTMENTAL PERFORMANCE</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', flex: 1, justifyContent: 'center' }}>
+              {Object.entries(deptStats).map(([dept, stat]: any) => {
+                const resolvedPct = stat.total > 0 ? Math.round((stat.resolved / stat.total) * 100) : 0;
+                return (
+                  <div key={dept} style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', fontWeight: 700 }}>
+                      <span style={{ color: 'var(--foreground)' }}>{dept}</span>
+                      <span style={{ color: 'var(--accent)' }}>{resolvedPct}% Resolved</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: 'var(--muted)' }}>
+                      <span>Active Workload: {stat.pending} cases</span>
+                      <span>Total Budget: ₹{stat.cost.toLocaleString()}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Priority & Severity Distribution (Card) */}
+          <div className="card" style={{ padding: '1.5rem', background: 'var(--card)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <h3 style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--foreground)' }}>SEVERITY LEVEL MATRIX</h3>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', flex: 1, alignContent: 'center', justifyContent: 'center' }}>
+              {Object.entries(severityCounts).map(([sev, count]: any) => {
+                let color = 'var(--muted)';
+                if (sev === 'Critical') color = '#dc2626';
+                else if (sev === 'High') color = 'var(--warning)';
+                else if (sev === 'Medium') color = '#3b82f6';
+                else if (sev === 'Low') color = 'var(--accent)';
+
+                return (
+                  <div key={sev} style={{ flex: '1 1 120px', background: 'var(--background-secondary)', padding: '1rem', borderRadius: '12px', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.65rem', fontWeight: 800, color: 'var(--muted)', textTransform: 'uppercase' }}>{sev}</span>
+                    <span style={{ fontSize: '1.8rem', fontWeight: 800, color, fontFamily: 'Outfit', marginTop: '0.2rem' }}>{count}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Hotspots & Key Citizen Pain Points (Card) */}
+          <div className="card" style={{ padding: '1.5rem', background: 'var(--card)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: '1rem', gridColumn: 'span 2' }}>
+            <h3 style={{ fontSize: '0.95rem', fontWeight: 800, color: 'var(--foreground)' }}>CRITICAL INCIDENT HOTSPOTS & DUPLICATES</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {hotspotSummary.length > 0 ? hotspotSummary.map((issue) => (
+                <div key={issue.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--background-secondary)', padding: '0.75rem 1rem', borderRadius: '12px', border: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                    <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--foreground)' }}>{issue.title}</span>
+                    <span style={{ fontSize: '0.7rem', color: 'var(--muted)' }}>Category: {issue.category} | GPS: {issue.lat.toFixed(5)}, {issue.lng.toFixed(5)}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.5rem' }}>
+                    <span className="badge" style={{ background: 'rgb(var(--destructive-rgb) / 0.1)', color: 'var(--destructive)', fontSize: '0.62rem' }}>
+                      {issue.duplicate_count || 0} Duplicates
+                    </span>
+                    <span className="badge" style={{ background: 'var(--accent-tint)', color: 'var(--accent)', fontSize: '0.62rem' }}>
+                      {issue.upvotes} Upvotes
+                    </span>
+                  </div>
+                </div>
+              )) : (
+                <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--muted)', fontSize: '0.82rem' }}>
+                  No duplicate clusters detected or heavily upvoted pain points found yet.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

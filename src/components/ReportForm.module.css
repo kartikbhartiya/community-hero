@@ -1,6 +1,6 @@
 .formContainer {
-  background: hsl(var(--card));
-  border: 1px solid hsl(var(--border));
+  background: var(--card);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 2.5rem;
   max-width: 600px;
@@ -15,7 +15,7 @@
   margin-bottom: 2rem;
   text-transform: uppercase;
   letter-spacing: -0.02em;
-  color: hsl(var(--foreground));
+  color: var(--foreground);
   text-align: center;
 }
 
@@ -38,22 +38,22 @@
 }
 
 .fileUploadArea {
-  border: 1px dashed hsl(var(--border));
+  border: 1px dashed var(--border);
   border-radius: var(--radius);
   padding: 3rem 2rem;
   text-align: center;
   cursor: pointer;
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  background: hsla(var(--foreground), 0.02);
+  background: rgb(var(--foreground-rgb) / 0.02);
 }
 
 .fileUploadArea:hover {
-  border-color: hsl(var(--primary));
-  background: hsla(var(--primary), 0.04);
+  border-color: var(--primary);
+  background: rgb(var(--primary-rgb) / 0.04);
 }
 
 .fileUploadIcon {
-  color: hsl(var(--primary));
+  color: var(--primary);
   margin-bottom: 1rem;
   transition: transform 0.3s ease;
 }
@@ -68,7 +68,7 @@
   max-height: 350px;
   border-radius: var(--radius);
   overflow: hidden;
-  border: 1px solid hsl(var(--border));
+  border: 1px solid var(--border);
   margin-top: 1rem;
 }
 
@@ -94,8 +94,8 @@
   left: 0;
   width: 100%;
   height: 4px;
-  background: hsl(var(--primary));
-  box-shadow: 0 0 15px 4px hsl(var(--primary));
+  background: var(--primary);
+  box-shadow: 0 0 15px 4px var(--primary);
   animation: laserScan 2.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
@@ -121,7 +121,7 @@
 }
 
 .error {
-  color: hsl(var(--destructive));
+  color: var(--destructive);
   font-size: 0.9rem;
   margin-top: 0.5rem;
   font-weight: 500;
@@ -133,7 +133,7 @@
 }
 
 .successIcon {
-  color: hsl(var(--accent));
+  color: var(--accent);
   margin-bottom: 1.5rem;
 }
 
@@ -148,21 +148,21 @@
   font-size: 0.9rem;
   font-weight: 600;
   border-radius: var(--radius);
-  background: hsla(var(--foreground), 0.03);
-  border: 1px solid hsl(var(--border));
+  background: rgb(var(--foreground-rgb) / 0.03);
+  border: 1px solid var(--border);
   cursor: pointer;
   transition: all 0.2s ease;
-  color: hsl(var(--foreground));
+  color: var(--foreground);
 }
 
 .locationBtn:hover {
-  background: hsla(var(--foreground), 0.08);
-  border-color: hsla(var(--foreground), 0.2);
+  background: rgb(var(--foreground-rgb) / 0.08);
+  border-color: rgb(var(--foreground-rgb) / 0.2);
 }
 
 .locationText {
   font-size: 0.9rem;
-  color: hsl(var(--primary));
+  color: var(--primary);
   margin-top: 0.5rem;
   font-weight: 600;
   display: flex;
@@ -188,8 +188,8 @@
 }
 
 .modalContent {
-  background: hsl(var(--card));
-  border: 1px solid hsl(var(--border));
+  background: var(--card);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 2.5rem;
   max-width: 500px;
@@ -207,7 +207,7 @@
 .progressBarContainer {
   width: 100%;
   height: 6px;
-  background: hsla(var(--foreground), 0.05);
+  background: rgb(var(--foreground-rgb) / 0.05);
   border-radius: 3px;
   overflow: hidden;
   margin-top: 0.75rem;
@@ -215,6 +215,6 @@
 
 .progressBar {
   height: 100%;
-  background: hsl(var(--primary));
+  background: var(--primary);
   transition: width 0.3s ease;
 }

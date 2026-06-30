@@ -82,7 +82,41 @@ export async function POST(request: NextRequest) {
       If your issue has crossed the SLA countdown, you can download the **RTI draft** from the issue page to file with the local municipal ward office.`;
     }
 
-    return NextResponse.json({ text: responseText });
+    // --- Agentic layer: derive contextual actions + follow-ups ---
+    const haystack = `${message} ${responseText}`.toLowerCase();
+    const actions: { label: string; href: string; kind: string }[] = [];
+    const pushAction = (a: { label: string; href: string; kind: string }) => {
+      if (!actions.some(x => x.href === a.href)) actions.push(a);
+    };
+
+    if (/\b(report|file|complain|submit|new issue|pothole|garbage|streetlight|leak|drain)\b/.test(haystack)) {
+      pushAction({ label: 'Report an issue', href: '/report', kind: 'report' });
+    }
+    if (/\b(map|near me|nearby|location|where|area|hotspot)\b/.test(haystack)) {
+      pushAction({ label: 'Open live map', href: '/', kind: 'map' });
+    }
+    if (/\b(rti|escalat|sla|overdue|deadline|pio|right to information)\b/.test(haystack)) {
+      pushAction({ label: 'Track my reports', href: '/dashboard', kind: 'escalate' });
+    }
+    if (/\b(rank|leaderboard|score|hero|points|badge)\b/.test(haystack)) {
+      pushAction({ label: 'View leaderboard', href: '/leaderboard', kind: 'ranks' });
+    }
+    if (/\b(department|performance|scorecard|resolution rate|stats)\b/.test(haystack)) {
+      pushAction({ label: 'Department scorecards', href: '/scorecards', kind: 'scorecards' });
+    }
+    // Always offer a sensible default if nothing matched
+    if (actions.length === 0) {
+      pushAction({ label: 'Open live map', href: '/', kind: 'map' });
+      pushAction({ label: 'Report an issue', href: '/report', kind: 'report' });
+    }
+
+    const followUps = [
+      'Which issues are overdue on their SLA?',
+      'How do I escalate via RTI?',
+      'What can I report here?',
+    ].filter(f => f.toLowerCase() !== message.toLowerCase()).slice(0, 3);
+
+    return NextResponse.json({ text: responseText, actions: actions.slice(0, 4), followUps });
   } catch (error: any) {
     console.error('Error in /api/citizen-advisor:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
